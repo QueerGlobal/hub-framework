@@ -19,7 +19,8 @@
 
 # Go workspace file
 go.work
-go.work.sum
 
-# env file
-.env
+# this should be in a developers's root environment, but it's common, so include
+**/.DS_Store
+
+.idea
