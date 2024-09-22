@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/QueerGlobal/qg-hub/core/entity"
+	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/labstack/echo/v4"
 )
 

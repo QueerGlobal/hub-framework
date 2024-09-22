@@ -6,9 +6,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/QueerGlobal/qg-hub/adapter/config/yaml"
-	"github.com/QueerGlobal/qg-hub/adapter/handler/requesthandler"
-	"github.com/QueerGlobal/qg-hub/core/entity"
+	"github.com/QueerGlobal/hub-framework/adapter/config/yaml"
+	"github.com/QueerGlobal/hub-framework/adapter/handler/requesthandler"
+	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/rs/zerolog"
 )
 

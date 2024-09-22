@@ -5,12 +5,12 @@ import (
 	"os"
 	"path/filepath"
 
-	domainerr "github.com/QueerGlobal/qg-hub/core/entity/error"
+	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/QueerGlobal/qg-hub/adapter/config/model"
-	"github.com/QueerGlobal/qg-hub/core/entity"
+	"github.com/QueerGlobal/hub-framework/adapter/config/model"
+	"github.com/QueerGlobal/hub-framework/core/entity"
 )
 
 type Configurer struct {

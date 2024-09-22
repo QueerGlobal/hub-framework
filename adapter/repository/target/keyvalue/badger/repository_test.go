@@ -1,12 +1,13 @@
 package badger_test
 
 import (
-	"github.com/QueerGlobal/qg-hub/adapter/repository/target/keyvalue/badger"
-	"github.com/QueerGlobal/qg-hub/core/entity"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/QueerGlobal/hub-framework/adapter/repository/target/keyvalue/badger"
+	"github.com/QueerGlobal/hub-framework/core/entity"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 type TestType struct {

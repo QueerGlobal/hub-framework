@@ -13,10 +13,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/QueerGlobal/qg-hub/core/entity"
 
-	"github.com/QueerGlobal/qg-hub/adapter/repository/target/model"
-	domainerr "github.com/QueerGlobal/qg-hub/core/entity/error"
+	"github.com/QueerGlobal/hub-framework/core/entity"
+
+	"github.com/QueerGlobal/hub-framework/adapter/repository/target/model"
+	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/google/uuid"
 )

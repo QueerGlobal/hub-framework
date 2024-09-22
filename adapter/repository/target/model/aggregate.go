@@ -2,9 +2,10 @@ package model
 
 import (
 	"fmt"
-	"github.com/QueerGlobal/qg-hub/core/entity"
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/QueerGlobal/hub-framework/core/entity"
+	"github.com/google/uuid"
 )
 
 type StoredAggregate[T any] struct {

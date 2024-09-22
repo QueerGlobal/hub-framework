@@ -3,7 +3,7 @@ package entity
 import (
 	"strings"
 
-	domainerr "github.com/QueerGlobal/qg-hub/core/entity/error"
+	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 )
 
 // HTTPMethod is a string type representing HTTP methods.

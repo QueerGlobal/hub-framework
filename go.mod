@@ -1,4 +1,4 @@
-module github.com/QueerGlobal/qg-hub
+module github.com/QueerGlobal/hub-framework
 
 go 1.22
 

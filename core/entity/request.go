@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	domainerr "github.com/QueerGlobal/qg-hub/core/entity/error"
+	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 )
 
 type ServiceRequest struct {

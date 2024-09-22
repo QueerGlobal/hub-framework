@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/QueerGlobal/qg-hub/core/entity"
+	"github.com/QueerGlobal/hub-framework/core/entity"
 )
 
 func RegisterTaskType(name string,

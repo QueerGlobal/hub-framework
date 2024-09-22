@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/QueerGlobal/qg-hub/core/entity"
-	domainerr "github.com/QueerGlobal/qg-hub/core/entity/error"
+	"github.com/QueerGlobal/hub-framework/core/entity"
+	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 	"github.com/stretchr/testify/assert"
 )
 

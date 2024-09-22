@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/QueerGlobal/qg-hub/core/entity"
+	"github.com/QueerGlobal/hub-framework/core/entity"
 )
 
 // TargetConstructor takes a config object and returns a configured

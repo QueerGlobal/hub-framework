@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	domainerr "github.com/QueerGlobal/qg-hub/core/entity/error"
+	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 )
 
 var ErrMethodNotConfigured error = fmt.Errorf("error not configured")

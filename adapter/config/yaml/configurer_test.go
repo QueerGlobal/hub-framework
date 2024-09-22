@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/QueerGlobal/qg-hub/adapter/handler/requesthandler"
-	"github.com/QueerGlobal/qg-hub/core/entity"
+	"github.com/QueerGlobal/hub-framework/adapter/handler/requesthandler"
+	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

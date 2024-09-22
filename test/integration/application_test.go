@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/QueerGlobal/qg-hub/api"
-	"github.com/QueerGlobal/qg-hub/core/entity"
+	"github.com/QueerGlobal/hub-framework/api"
+	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

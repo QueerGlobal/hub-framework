@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	domainerr "github.com/QueerGlobal/qg-hub/core/entity/error"
+	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 	zerolog "github.com/rs/zerolog"
 )
 

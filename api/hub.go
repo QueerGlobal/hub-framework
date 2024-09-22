@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/QueerGlobal/qg-hub/core/entity"
+	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/rs/zerolog"
 )
 

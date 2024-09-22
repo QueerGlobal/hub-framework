@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	domainerr "github.com/QueerGlobal/qg-hub/core/entity/error"
+	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 )
 
 // TargetConstructor takes a config object and returns a configured

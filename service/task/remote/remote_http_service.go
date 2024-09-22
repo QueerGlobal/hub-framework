@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/QueerGlobal/qg-hub/core/entity"
-	"github.com/QueerGlobal/qg-hub/util"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/QueerGlobal/hub-framework/core/entity"
+	"github.com/QueerGlobal/hub-framework/util"
 )
 
 type ForwardingService struct {

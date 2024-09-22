@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/QueerGlobal/qg-hub/core/entity"
+	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/stretchr/testify/assert"
 )
 
