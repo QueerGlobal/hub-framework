@@ -1,0 +1,61 @@
+apiVersion: v1
+specType: Aggregate
+spec:
+  name: chefs
+  apiName: recipeApp
+  isPublic: true
+  schemaName: Person
+  schemaVersion: v0.0.1
+  handlers:
+    - methods: ["GET", "PUT", "POST", "DELETE"]
+      inbound:
+        - name: requestLogger
+          ref: builtin.RequestLogger
+          precedence: 1
+          executionType: async
+          config:
+            logFilePath: "/var/log/my-servicename"
+        - name: internalTokenCreator
+          type: oryCookieToTokenTransformer
+          executionType: sync
+          precedence: 2
+          config:
+            ketoHome: "home"
+      outbound:
+        - name: ResponseBodyLogger
+          description: "log response body"
+          precedence: 1
+          type: LogWriter
+          executionType: sync
+          mustFinish: false
+          onError: Ignore
+          enabled: True
+          config:
+            logAtLevel: INFO
+        - name: ResponseCodeLogger
+          type: LogWriter
+          precedence: 32000 # use a large precedence value so that response code is logged after all other steps
+
+    - methods: ["GET"]
+      inbound:
+        - name: RequestLogger
+          type: LogWriter
+          precedence: 2
+          executionType: sync
+          mustFinish: true
+          onError: LogAndIgnore
+          enabled: True
+          config:
+            logAtLevel: INFO
+      outbound:
+        - name: ResponseCodeLogger
+          type: LogWriter
+           precedence: 32000 # use a large precedence value so that response code is logged after all other steps
+          description: "log response code upon processing complete"
+          executionType: sync
+          onError: LogAndFail
+          enabled: True
+          config:
+            logAtLevel: INFO
+
+      

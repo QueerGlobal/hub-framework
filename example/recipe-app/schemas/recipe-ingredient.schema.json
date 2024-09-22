@@ -1,0 +1,20 @@
+{
+  "$id": "https://example.com/schemas/recipe/ingredient",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Recipe",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The name of the ingredient"
+    },
+    "category": {
+      "type": "string",
+      "description": "The type of ingredient (dairy, protein, etc.)"
+    },
+    "unitsOfMeasurement": {
+      "type": "string",
+      "description": "The units of measurement (flOZ, dry cups, etc.)"
+    }
+  }
+}

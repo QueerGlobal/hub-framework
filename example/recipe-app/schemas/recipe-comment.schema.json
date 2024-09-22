@@ -1,0 +1,21 @@
+{
+  "$id": "https://example.com/schemas/recipe/comment",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Comment",
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "description": "The comment body"
+    },
+    "createdDate": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ownerId": {
+      "description": "The ID of the person who created this recipe.",
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}

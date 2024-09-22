@@ -1,0 +1,76 @@
+apiVersion: v1
+specType: Aggregate
+spec:
+  name: recipe
+  apiName: recipeApp
+  isPublic: true
+  schemaName: Recipe
+  schemaVersion: v0.0.2
+  target:
+    name: persistRecipe
+    type: Badger
+  handlers:
+    - methods: ["POST", "PUT", "DELETE"]
+      inbound:
+        - name: RequestLogger
+          type: LogWriter
+          precedence: 2
+          executionType: sync
+          mustFinish: true
+          onError: LogAndIgnore
+          enabled: True
+          config:
+            logAtLevel: INFO
+      outbound:
+        - name: SearchRegistrar
+          precedence: 1 
+          description: "send payload and identifier to search service"
+          type: HttpService
+          executionType: Synchronous
+          mustFinish: true
+          onError: Log
+          config:
+            serviceName: "recipe"
+            key: headers.SearchKey
+        - name: ResponseBodyLogger
+          description: "log response body"
+          precedence: 2
+          type: LogWriter
+          executionType: sync
+          mustFinish: false
+          onError: Ignore
+          enabled: True
+          config:
+            logAtLevel: INFO
+        - name: ResponseCodeLogger
+          type: LogWriter
+          precedence: 32000 # use a large precedence value so that response code is logged after all other steps
+          description: "log response code upon processing complete"
+          executionType: sync
+          onError: LogAndFail
+          enabled: True
+          config:
+            logAtLevel: INFO
+
+    - methods: ["GET"]
+      inbound:
+        - name: RequestLogger
+          type: LogWriter
+          precedence: 2
+          executionType: sync
+          mustFinish: true
+          onError: LogAndIgnore
+          enabled: True
+          config:
+            logAtLevel: INFO
+      outbound:
+        - name: ResponseCodeLogger
+          type: LogWriter
+           precedence: 32000 # use a large precedence value so that response code is logged after all other steps
+          description: "log response code upon processing complete"
+          executionType: sync
+          onError: LogAndFail
+          enabled: True
+          config:
+            logAtLevel: INFO
+

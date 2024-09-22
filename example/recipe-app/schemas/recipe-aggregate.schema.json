@@ -1,0 +1,29 @@
+{
+  "$id": "https://example.com/schemas/recipe/aggregate",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Recipe",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "The recipe title"
+    },
+    "ownerId": {
+      "description": "The ID of the person who created this recipe.",
+      "type": "number",
+      "minimum": 0
+    },
+    "ingredients": {
+      "type": "array",
+      "items": {
+        "type": {"$ref" : "/recipe/ingredient"}
+      }
+    },
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": {"$ref" : "/recipe/comment"}
+      }
+    }
+  }
+}
