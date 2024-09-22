@@ -199,6 +199,7 @@ Other key priorities include:
     - JWT Validation
     - Configurable Rate limiting
 - Schema versioning / schema registory / migration support (eg enforcable backwards compatibility)
+- Generation of Frontend Stubs (We should be able to generate javascript objects matching each aggregate schema, usable from frontend code)
 - Improved startup scripts and workflow task registration
 - Improved project generation scripts
 - Local development environment improvements
