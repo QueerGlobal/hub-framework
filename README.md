@@ -1,6 +1,4 @@
-# Hub Project
-
-## The Hub Application Framework
+# The Hub Application Framework
 
 Building great software is no easy task, and it takes a village. 
 At Queer Global we rely on like-minded engineers to help us build a 
