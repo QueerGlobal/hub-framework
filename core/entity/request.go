@@ -11,40 +11,51 @@ import (
 	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 )
 
+// ServiceRequest represents a standardized request structure used within the service.
 type ServiceRequest struct {
-	ApiName      string
-	ServiceName  string
-	Method       HTTPMethod
-	URL          *url.URL
-	InternalPath string
-	Body         []byte
-	Form         *url.Values
-	PostForm     *url.Values
-	Multipart    *MultipartData
-	Response     *ServiceResponse
-	RequestMeta  RequestMeta
-	Header       http.Header
-	Trailer      http.Header
+	ApiName      string           // Name of the API being called
+	ServiceName  string           // Name of the specific service within the API
+	Method       HTTPMethod       // HTTP method of the request
+	URL          *url.URL         // Full URL of the request
+	InternalPath string           // Internal path after removing prefixes
+	Body         []byte           // Raw body of the request
+	Form         *url.Values      // URL-encoded form data
+	PostForm     *url.Values      // Posted form data
+	Multipart    *MultipartData   // Multipart form data, including file uploads
+	Response     *ServiceResponse // Associated response (if any)
+	RequestMeta  RequestMeta      // Additional metadata about the request
+	Header       http.Header      // HTTP headers
+	Trailer      http.Header      // HTTP trailers
 }
 
+// MultipartData holds both regular form values and file data for multipart requests.
 type MultipartData struct {
-	Value    map[string][]string
-	FileData map[string][]byte
+	Value    map[string][]string // Regular form values
+	FileData map[string][]byte   // File data, keyed by field name
 }
 
+// RequestMeta contains additional metadata about the original HTTP request.
 type RequestMeta struct {
-	OriginalRequest  *http.Request
-	Params           map[string]string
-	Proto            string
-	ProtoMajor       int
-	ProtoMinor       int
-	ContentLength    int64
-	TransferEncoding []string
-	Host             string
-	RemoteAddr       string
-	RequestURI       string
+	OriginalRequest  *http.Request     // The original http.Request
+	Params           map[string]string // Additional parameters (e.g., from router)
+	Proto            string            // Protocol version
+	ProtoMajor       int               // Major protocol version
+	ProtoMinor       int               // Minor protocol version
+	ContentLength    int64             // Length of the request body
+	TransferEncoding []string          // Transfer encodings
+	Host             string            // Requested host
+	RemoteAddr       string            // Remote address of the client
+	RequestURI       string            // Unmodified request-target of the Request-Line
 }
 
+// GetEntityFromRequest unmarshals the request body into a given entity type.
+//
+// Parameters:
+//   - r: A pointer to a ServiceRequest containing the request data.
+//
+// Returns:
+//   - T: The unmarshaled entity of type T.
+//   - error: An error if unmarshaling fails, nil otherwise.
 func GetEntityFromRequest[T any](r *ServiceRequest) (T, error) {
 	var entity T
 	if err := json.Unmarshal(r.Body, &entity); err != nil {
@@ -53,6 +64,14 @@ func GetEntityFromRequest[T any](r *ServiceRequest) (T, error) {
 	return entity, nil
 }
 
+// GetRequestFromHttp converts a standard http.Request to our custom ServiceRequest.
+//
+// Parameters:
+//   - r: A pointer to an http.Request to be converted.
+//
+// Returns:
+//   - *ServiceRequest: A pointer to the converted ServiceRequest.
+//   - error: An error if conversion fails, nil otherwise.
 func GetRequestFromHttp(r *http.Request) (*ServiceRequest, error) {
 	if r == nil {
 		return nil, domainerr.ErrEmptyInput
@@ -89,7 +108,7 @@ func GetRequestFromHttp(r *http.Request) (*ServiceRequest, error) {
 
 	internalPath := r.URL.Path
 
-	//remove the /internal/call prefix if it exists
+	// Remove the /internal/call prefix if it exists
 	if strings.HasPrefix(internalPath, "/internal/call") {
 		internalPath = strings.Replace(internalPath, "/internal/call", "", 1)
 	}

@@ -8,26 +8,41 @@ import (
 	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 )
 
+// ErrMethodNotConfigured is returned when a requested HTTP method is not configured for a service.
 var ErrMethodNotConfigured error = fmt.Errorf("error not configured")
 
+// Service represents a single service or DDD-style aggregate. It consists of handlers
+// with incoming and outgoing workflows, and a target for each allowed HTTP method.
 type Service struct {
-	Name           string
-	SchemaName     string
-	SchemaVersion  string
-	APIName        string
-	IsPublic       bool
-	ServiceTimeout *time.Duration
-	Methods        map[HTTPMethod]*Handler
+	Name           string                  // Name of the service
+	SchemaName     string                  // Name of the schema used by the service
+	SchemaVersion  string                  // Version of the schema
+	APIName        string                  // Name of the API this service belongs to
+	IsPublic       bool                    // Indicates if the service is publicly accessible
+	ServiceTimeout *time.Duration          // Timeout for service operations
+	Methods        map[HTTPMethod]*Handler // Map of HTTP methods to their respective handlers
 }
 
+// Handler defines the structure for handling a specific HTTP method within a service.
 type Handler struct {
-	InboundWorkflow  Workflow
-	OutboundWorkflow Workflow
-	Target           Target
+	InboundWorkflow  Workflow // Workflow to be applied to incoming requests
+	OutboundWorkflow Workflow // Workflow to be applied to outgoing responses
+	Target           Target   // The target operation to be executed
 }
 
-func NewService(apiName, name, schemaName, schemaVersion string,
-	public bool) (*Service, error) {
+// NewService creates and returns a new Service instance.
+//
+// Parameters:
+//   - apiName: Name of the API this service belongs to.
+//   - name: Name of the service.
+//   - schemaName: Name of the schema used by the service.
+//   - schemaVersion: Version of the schema.
+//   - public: Indicates if the service is publicly accessible.
+//
+// Returns:
+//   - *Service: A pointer to the newly created Service.
+//   - error: Always nil in the current implementation.
+func NewService(apiName, name, schemaName, schemaVersion string, public bool) (*Service, error) {
 	service := Service{
 		Name:          name,
 		SchemaName:    schemaName,
@@ -39,8 +54,14 @@ func NewService(apiName, name, schemaName, schemaVersion string,
 	return &service, nil
 }
 
-// doRequest first applies a series of workflow steps to an incoming
-// request, then
+// DoRequest processes an incoming service request by applying the appropriate workflows and target operation.
+//
+// Parameters:
+//   - ctx: The context for the request.
+//   - request: A pointer to the ServiceRequest to be processed.
+//
+// Returns:
+//   - error: Any error encountered during processing, or nil if successful.
 func (service *Service) DoRequest(ctx context.Context, request *ServiceRequest) error {
 	if request == nil {
 		return domainerr.ErrEmptyInput
@@ -94,10 +115,19 @@ func (service *Service) DoRequest(ctx context.Context, request *ServiceRequest) 
 	return nil
 }
 
+// SetHandler assigns a Handler to a specific HTTP method for the service.
+//
+// Parameters:
+//   - method: The HTTP method to assign the handler to.
+//   - handler: A pointer to the Handler to be assigned.
 func (service *Service) SetHandler(method HTTPMethod, handler *Handler) {
 	service.Methods[method] = handler
 }
 
+// GetHandlers returns a map of all configured HTTP methods and their handlers for the service.
+//
+// Returns:
+//   - map[HTTPMethod]*Handler: A map of HTTP methods to their respective handlers.
 func (service *Service) GetHandlers() map[HTTPMethod]*Handler {
 	return service.Methods
 }
