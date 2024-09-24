@@ -1,13 +1,14 @@
-# Hub Project
-
-## The Hub Application Framework
+# The Hub Application Framework
 
 Building great software is no easy task, and it takes a village. 
 At Queer Global we rely on like-minded engineers to help us build a 
 great software, and we want to make that kind of collaboration as
 easy as possible. 
 
-Even while tools like AI give us new and exciting capabilities, the challenges of building great software remain. We need to manage complexity, ensure quality, and make it easy to collaborate with one another. 
+Even while tools like AI give us new and exciting capabilities, the challenges 
+of building software that is easy for community members to contributo to remain.
+
+We need to manage complexity, ensure quality, and make it easy to collaborate with one another. 
 
 This project aims to help us at QG do that, and we want to share it with you: 
 - It makes it easy to collaborate by providing a common architecture and the ability to choose the language you want to code in. 
@@ -198,6 +199,7 @@ Other key priorities include:
     - JWT Validation
     - Configurable Rate limiting
 - Schema versioning / schema registory / migration support (eg enforcable backwards compatibility)
+- Generation of Frontend Stubs (We should be able to generate javascript objects matching each aggregate schema, usable from frontend code)
 - Improved startup scripts and workflow task registration
 - Improved project generation scripts
 - Local development environment improvements
