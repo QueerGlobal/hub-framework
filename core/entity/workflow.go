@@ -7,6 +7,7 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+// Workflow is the interface for a workflow that can be applied to a ServiceRequest.
 type Workflow interface {
 	Apply(ctx context.Context, in *ServiceRequest) error
 }
