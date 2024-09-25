@@ -56,7 +56,7 @@ dependencies before they can make meaningful contributions.
 
 ## Design
 
-We believe that most, if not all interactions within a system 
+We believe that most interactions within a software system 
 can be represented by CRUD (Create, Read, Update, Delete) operations 
 on a few key objects in the system, or aggregates. 
 
