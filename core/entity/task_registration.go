@@ -10,12 +10,12 @@ import (
 // TaskConstructor takes a config object and returns a configured
 // Target instance.
 type TaskConstructor interface {
-	New(config map[string]any) Task
+	New(config map[string]any) (Task, error)
 }
 
-type TaskConstructorFunc func(config map[string]any) Task
+type TaskConstructorFunc func(config map[string]any) (Task, error)
 
-func (f TaskConstructorFunc) New(config map[string]any) Task {
+func (f TaskConstructorFunc) New(config map[string]any) (Task, error) {
 	return f(config)
 }
 
@@ -47,6 +47,16 @@ func RegisterTaskType(name string,
 	TaskRegistry()[name] = taskConstructor
 }
 
+// GetTask retrieves a Task instance by its name and configuration.
+// It returns an error if the task is not registered.
+//
+// Parameters:
+// - taskName: the name of the task to retrieve
+// - config: a map containing the configuration for the task
+//
+// Returns:
+// - Task: the configured Task instance
+// - error: an error if the task is not registered
 func GetTask(taskName string, config map[string]interface{}) (Task, error) {
 	taskConstructor, ok := TaskRegistry()[taskName]
 	if !ok {
@@ -54,7 +64,10 @@ func GetTask(taskName string, config map[string]interface{}) (Task, error) {
 			domainerr.ErrWorkflowTaskNotRegistered)
 	}
 
-	task := taskConstructor.New(config)
+	task, err := taskConstructor.New(config)
+	if err != nil {
+		return nil, err
+	}
 
 	return task, nil
 }

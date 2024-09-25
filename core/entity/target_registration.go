@@ -10,12 +10,12 @@ import (
 // TargetConstructor takes a config object and returns a configured
 // Target instance.
 type TargetConstructor interface {
-	New(config map[string]any) Target
+	New(config map[string]any) (Target, error)
 }
 
-type TargetConstructorFunc func(config map[string]any) Target
+type TargetConstructorFunc func(config map[string]any) (Target, error)
 
-func (f TargetConstructorFunc) New(config map[string]any) Target {
+func (f TargetConstructorFunc) New(config map[string]any) (Target, error) {
 	return f(config)
 }
 
@@ -44,6 +44,18 @@ func RegisterTargetType(name string,
 	targetConstructor TargetConstructor) {
 	TargetRegistry()[name] = targetConstructor
 }
+
+// GetTarget retrieves a Target Constructor instance by its name,
+// passes in a config and returns a configured Target instance.
+// It returns an error if the target type is not registered.
+//
+// Parameters:
+// - taskName: the name of the task to retrieve
+// - config: a map containing the configuration for the task
+//
+// Returns:
+// - Task: the configured Task instance
+// - error: an error if the task is not registered
 func GetTarget(targetName string, config map[string]interface{}) (Target, error) {
 
 	targetConstructor, ok := TargetRegistry()[targetName]
@@ -52,7 +64,10 @@ func GetTarget(targetName string, config map[string]interface{}) (Target, error)
 			domainerr.ErrTargetNotRegistered)
 	}
 
-	target := targetConstructor.New(config)
+	target, err := targetConstructor.New(config)
+	if err != nil {
+		return nil, err
+	}
 
 	return target, nil
 }

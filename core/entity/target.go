@@ -33,8 +33,8 @@ func (t *NoOpTarget) Apply(ctx context.Context, request *ServiceRequest) (*Servi
 }
 
 func NewNoOpTargetConstructor() TargetConstructor {
-	constructor := func(config map[string]any) Target {
-		return &NoOpTarget{}
+	constructor := func(config map[string]any) (Target, error) {
+		return &NoOpTarget{}, nil
 	}
 	return TargetConstructorFunc(constructor)
 }
