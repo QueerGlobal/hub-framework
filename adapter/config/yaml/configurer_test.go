@@ -21,7 +21,7 @@ type MockTask struct {
 	handler func(*entity.ServiceRequest)
 }
 
-func NewMockTask(config map[string]any) entity.Task {
+func NewMockTask(config map[string]any) (entity.Task, error) {
 	mockTask := &MockTask{Config: config}
 	mockTask.handler = func(req *entity.ServiceRequest) {
 		req.Response = &entity.ServiceResponse{
@@ -31,7 +31,7 @@ func NewMockTask(config map[string]any) entity.Task {
 			Body: []byte("MockTask"),
 		}
 	}
-	return mockTask
+	return mockTask, nil
 }
 
 func (t *MockTask) Apply(ctx context.Context, req *entity.ServiceRequest) error {
@@ -56,8 +56,8 @@ type MockTarget struct {
 	Config map[string]any
 }
 
-func NewMockTarget(config map[string]any) entity.Target {
-	return &MockTarget{Config: config}
+func NewMockTarget(config map[string]any) (entity.Target, error) {
+	return &MockTarget{Config: config}, nil
 }
 
 func (t *MockTarget) Apply(ctx context.Context, req *entity.ServiceRequest) (*entity.ServiceResponse, error) {

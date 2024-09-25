@@ -7,7 +7,7 @@ import (
 // TargetConstructor takes a config object and returns a configured
 // Target instance.
 type TargetConstructor interface {
-	New(config map[string]any) entity.Target
+	New(config map[string]any) (entity.Target, error)
 }
 
 // RegisteredWorkflowSteps allows us to register workflow steps at start-up
