@@ -1,0 +1,95 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+      "ServiceRequest": {
+        "type": "object",
+        "properties": {
+          "ApiName": { "type": "string" },
+          "ServiceName": { "type": "string" },
+          "Method": { "type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"] },
+          "URL": { "type": "string", "format": "uri" },
+          "InternalPath": { "type": "string" },
+          "Body": { "type": "string", "contentEncoding": "base64" },
+          "Form": {
+            "type": "object",
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          },
+          "PostForm": {
+            "type": "object",
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          },
+          "Multipart": { "$ref": "#/definitions/MultipartData" },
+          "Response": { "$ref": "#/definitions/ServiceResponse" },
+          "RequestMeta": { "$ref": "#/definitions/RequestMeta" },
+          "Header": {
+            "type": "object",
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          },
+          "Trailer": {
+            "type": "object",
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "required": ["ApiName", "ServiceName", "Method", "URL", "InternalPath", "RequestMeta"]
+      },
+      "MultipartData": {
+        "type": "object",
+        "properties": {
+          "Value": {
+            "type": "object",
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          },
+          "FileData": {
+            "type": "object",
+            "additionalProperties": { "type": "string", "contentEncoding": "base64" }
+          }
+        }
+      },
+      "RequestMeta": {
+        "type": "object",
+        "properties": {
+          "Params": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "Proto": { "type": "string" },
+          "ProtoMajor": { "type": "integer" },
+          "ProtoMinor": { "type": "integer" },
+          "ContentLength": { "type": "integer" },
+          "TransferEncoding": { "type": "array", "items": { "type": "string" } },
+          "Host": { "type": "string" },
+          "RemoteAddr": { "type": "string" },
+          "RequestURI": { "type": "string" }
+        },
+        "required": ["Proto", "ProtoMajor", "ProtoMinor", "ContentLength", "Host", "RemoteAddr", "RequestURI"]
+      },
+      "ServiceResponse": {
+        "type": "object",
+        "properties": {
+          "ResponseMeta": { "$ref": "#/definitions/ResponseMeta" },
+          "Body": { "type": "string", "contentEncoding": "base64" }
+        },
+        "required": ["ResponseMeta", "Body"]
+      },
+      "ResponseMeta": {
+        "type": "object",
+        "properties": {
+          "Status": { "type": "string" },
+          "StatusCode": { "type": "integer" },
+          "Proto": { "type": "string" },
+          "ProtoMajor": { "type": "integer" },
+          "ProtoMinor": { "type": "integer" },
+          "TransferEncoding": { "type": "array", "items": { "type": "string" } },
+          "Header": {
+            "type": "object",
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          },
+          "Trailer": {
+            "type": "object",
+            "additionalProperties": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "required": ["Status", "StatusCode", "Proto", "ProtoMajor", "ProtoMinor"]
+      }
+    }
+  }

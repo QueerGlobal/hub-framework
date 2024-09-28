@@ -36,9 +36,6 @@ func (r *RequestHandler) Start(wg *sync.WaitGroup) error {
 		defer wg.Done()
 		portStr := ":" + strconv.Itoa(r.port)
 
-		// Remove this line:
-		// http.Handle("/", r)
-
 		log.Printf("Starting server on %s...\r\n", portStr)
 		if err := http.ListenAndServe(portStr, r); err != nil {
 			log.Fatalf("Server failed to start: %v", err)

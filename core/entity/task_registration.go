@@ -47,8 +47,9 @@ func RegisterTaskType(name string,
 	TaskRegistry()[name] = taskConstructor
 }
 
-// GetTask retrieves a Task instance by its name and configuration.
-// It returns an error if the task is not registered.
+// GetTask retrieves a Task Constructor instance by its name,
+// passes in a config and returns a configured Task instance.
+// It returns an error if the task type is not registered.
 //
 // Parameters:
 // - taskName: the name of the task to retrieve
