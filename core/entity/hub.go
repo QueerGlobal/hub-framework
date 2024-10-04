@@ -103,7 +103,7 @@ func (hub *Hub) HandleRequest(r *http.Request) (*ServiceResponse, error) {
 // Returns:
 //   - A pointer to ServiceResponse and nil error on success.
 //   - A pointer to ServiceResponse with error details and an error on failure.
-func (hub *Hub) executeServiceRequest(ctx context.Context, request *ServiceRequest) (*ServiceResponse, error) {
+func (hub *Hub) executeServiceRequest(ctx context.Context, request *HTTPServiceRequest) (*ServiceResponse, error) {
 	response := &ServiceResponse{}
 	response.ResponseMeta = ResponseMeta{}
 

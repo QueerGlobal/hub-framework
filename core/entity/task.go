@@ -8,5 +8,5 @@ import "context"
 // object.
 type Task interface {
 	Name() string
-	Apply(ctx context.Context, request *ServiceRequest) error
+	Apply(ctx context.Context, request ServiceRequest) error
 }

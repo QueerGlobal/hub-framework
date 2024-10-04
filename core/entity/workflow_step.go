@@ -32,7 +32,7 @@ func (w WorkflowStep) GetTask() Task {
 	return w.Task
 }
 
-func (w WorkflowStep) Apply(ctx context.Context, request *ServiceRequest) error {
+func (w WorkflowStep) Apply(ctx context.Context, request *HTTPServiceRequest) error {
 	return w.Task.Apply(ctx, request)
 }
 

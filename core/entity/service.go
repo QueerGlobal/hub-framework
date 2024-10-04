@@ -62,7 +62,7 @@ func NewService(apiName, name, schemaName, schemaVersion string, public bool) (*
 //
 // Returns:
 //   - error: Any error encountered during processing, or nil if successful.
-func (service *Service) DoRequest(ctx context.Context, request *ServiceRequest) error {
+func (service *Service) DoRequest(ctx context.Context, request *HTTPServiceRequest) error {
 	if request == nil {
 		return domainerr.ErrEmptyInput
 	}
@@ -87,7 +87,7 @@ func (service *Service) DoRequest(ctx context.Context, request *ServiceRequest) 
 		}
 	}
 
-	var response *ServiceResponse
+	var response ServiceResponseInterface
 	var err error
 
 	if handler.Target == nil {
@@ -103,7 +103,7 @@ func (service *Service) DoRequest(ctx context.Context, request *ServiceRequest) 
 		return domainerr.ErrEmptyResponse
 	}
 
-	request.Response = response
+	request.SetResponse(response)
 
 	if handler.OutboundWorkflow != nil {
 		err := handler.OutboundWorkflow.Apply(ctx, request)

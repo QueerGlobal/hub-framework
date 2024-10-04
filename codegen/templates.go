@@ -1,4 +1,4 @@
-package main
+package codegen
 
 type AppConfig struct {
 	Name string
@@ -63,17 +63,20 @@ import (
 )
 
 func main() {
-    // Example of using the API client
-    // TODO: Set LogLevel to Info or higher before release to production
-    client := api.NewApplication("{{.ApplicationName}}", WithLogLevel(api.LogLevelDebug))
-    result, err := client.GetSomething()
-    if err != nil {
-        log.Printf("Error calling API: %v", err)
-    } else {
-        log.Printf("API result: %s", result)
-    }
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Welcome to {{.ApplicationName}}!")
+	})
 
-    log.Printf("Starting {{.ApplicationName}} server on :8080")
-    log.Fatal(http.ListenAndServe(":8080", nil))
+	// Example of using the API client
+	client := api.NewApplication("{{.ApplicationName}}", api.WithLogLevel(api.LogLevelDebug))
+	result, err := client.GetSomething()
+	if err != nil {
+		log.Printf("Error calling API: %v", err)
+	} else {
+		log.Printf("API result: %s", result)
+	}
+
+	log.Printf("Starting {{.ApplicationName}} server on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 `

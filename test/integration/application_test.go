@@ -18,24 +18,24 @@ import (
 
 type MockTask struct {
 	Config  map[string]any
-	handler func(*entity.ServiceRequest)
+	handler func(api.ServiceRequest)
 }
 
-func NewMockTask(config map[string]any) (entity.Task, error) {
+func NewMockTask(config map[string]any) (api.Task, error) {
 	mockTask := &MockTask{Config: config}
-	mockTask.handler = func(req *entity.ServiceRequest) {
-		req.Response = &entity.ServiceResponse{
+	mockTask.handler = func(req api.ServiceRequest) {
+		req.SetResponse(&entity.ServiceResponse{
 			ResponseMeta: entity.ResponseMeta{
 				StatusCode: http.StatusOK,
 			},
 			Body: []byte("MockTask"),
-		}
+		})
 	}
 	return mockTask, nil
 }
 
-func (t *MockTask) Apply(ctx context.Context, req *entity.ServiceRequest) error {
-	req.Response = &entity.ServiceResponse{}
+func (t *MockTask) Apply(ctx context.Context, req api.ServiceRequest) error {
+	req.SetResponse(&entity.ServiceResponse{})
 	t.handler(req)
 	return nil
 }
@@ -45,24 +45,20 @@ func (t *MockTask) Name() string {
 }
 
 func registerMockTasks() {
-	api.RegisterTaskType("MockTask", entity.TaskConstructorFunc(NewMockTask))
-}
-
-func registerMockTargets() {
-	api.RegisterTargetType("MockTarget", entity.TargetConstructorFunc(NewMockTarget))
+	api.RegisterTaskType("MockTask", api.TaskConstructorFunc(NewMockTask))
 }
 
 type MockTarget struct {
 	Config map[string]any
 }
 
-func NewMockTarget(config map[string]any) (entity.Target, error) {
+func NewMockTarget(config map[string]any) (api.Target, error) {
 	return &MockTarget{Config: config}, nil
 }
 
-func (t *MockTarget) Apply(ctx context.Context, req *entity.ServiceRequest) (*entity.ServiceResponse, error) {
-	return &entity.ServiceResponse{
-		ResponseMeta: entity.ResponseMeta{
+func (t *MockTarget) Apply(ctx context.Context, req api.ServiceRequest) (api.ServiceResponse, error) {
+	return api.ServiceResponse{
+		ResponseMeta: api.ResponseMeta{
 			StatusCode: http.StatusOK,
 		},
 		Body: []byte("MockTarget"),
@@ -71,6 +67,10 @@ func (t *MockTarget) Apply(ctx context.Context, req *entity.ServiceRequest) (*en
 
 func (t *MockTarget) Name() string {
 	return "MockTarget"
+}
+
+func registerMockTargets() {
+	api.RegisterTargetType("MockTarget", api.TargetConstructorFunc(NewMockTarget))
 }
 
 func TestApplicationIntegrationNonNilRequest(t *testing.T) {
@@ -114,8 +114,7 @@ func TestApplicationIntegrationNonNilRequest(t *testing.T) {
 
 	// Check the response body
 	assert.NotEmpty(t, rr.Body.String(), "Response body should not be empty")
-	assert.Equal(t, "MockTask", (rr.Body.String()))
-
+	assert.Equal(t, "MockTask", rr.Body.String())
 }
 
 func setupTestDirectory(t *testing.T) string {

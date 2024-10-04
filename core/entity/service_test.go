@@ -17,7 +17,7 @@ type MockHandler struct {
 	Target           *MockTarget
 }
 
-func (m *MockHandler) Apply(ctx context.Context, req *entity.ServiceRequest) (*entity.ServiceResponse, error) {
+func (m *MockHandler) Apply(ctx context.Context, req entity.ServiceRequest) (entity.ServiceResponseInterface, error) {
 	if m.inboundWorkflow != nil {
 		if err := m.inboundWorkflow.Apply(ctx, req); err != nil {
 			return nil, err
@@ -38,17 +38,17 @@ func (m *MockHandler) Apply(ctx context.Context, req *entity.ServiceRequest) (*e
 
 // Mock Workflow for testing
 type MockWorkflow struct {
-	applyFunc func(ctx context.Context, req *entity.ServiceRequest) error
+	applyFunc func(ctx context.Context, req entity.ServiceRequest) error
 }
 
-func (m *MockWorkflow) Apply(ctx context.Context, req *entity.ServiceRequest) error {
+func (m *MockWorkflow) Apply(ctx context.Context, req entity.ServiceRequest) error {
 	return m.applyFunc(ctx, req)
 }
 
 // Mock Target for testing
 type MockTarget struct{}
 
-func (m *MockTarget) Apply(ctx context.Context, req *entity.ServiceRequest) (*entity.ServiceResponse, error) {
+func (m *MockTarget) Apply(ctx context.Context, req entity.ServiceRequest) (entity.ServiceResponseInterface, error) {
 	return &entity.ServiceResponse{}, nil
 }
 
@@ -72,7 +72,7 @@ func TestDoRequest_MethodNotFound(t *testing.T) {
 	service, _ := entity.NewService("/test", "TestService", "TestSchema", "1.0", true)
 	service.Methods = map[entity.HTTPMethod]*entity.Handler{}
 
-	req := &entity.ServiceRequest{
+	req := &entity.HTTPServiceRequest{
 		Method: entity.HTTPMethodPOST,
 	}
 
@@ -82,7 +82,7 @@ func TestDoRequest_MethodNotFound(t *testing.T) {
 
 func TestDoRequest_ApplyWorkflowError(t *testing.T) {
 	mockInboundWorkflow := &MockWorkflow{
-		applyFunc: func(ctx context.Context, req *entity.ServiceRequest) error {
+		applyFunc: func(ctx context.Context, req entity.ServiceRequest) error {
 			return errors.New("workflow error")
 		},
 	}
@@ -91,10 +91,11 @@ func TestDoRequest_ApplyWorkflowError(t *testing.T) {
 	service.Methods = map[entity.HTTPMethod]*entity.Handler{
 		entity.HTTPMethodPOST: {
 			InboundWorkflow: mockInboundWorkflow,
+			Target:          &MockTarget{},
 		},
 	}
 
-	req := &entity.ServiceRequest{
+	req := &entity.HTTPServiceRequest{
 		Method: entity.HTTPMethodPOST,
 	}
 
@@ -104,12 +105,12 @@ func TestDoRequest_ApplyWorkflowError(t *testing.T) {
 
 func TestDoRequest_Success(t *testing.T) {
 	mockInboundWorkflow := &MockWorkflow{
-		applyFunc: func(ctx context.Context, req *entity.ServiceRequest) error {
+		applyFunc: func(ctx context.Context, req entity.ServiceRequest) error {
 			return nil
 		},
 	}
 	mockOutboundWorkflow := &MockWorkflow{
-		applyFunc: func(ctx context.Context, req *entity.ServiceRequest) error {
+		applyFunc: func(ctx context.Context, req entity.ServiceRequest) error {
 			return nil
 		},
 	}
@@ -124,7 +125,7 @@ func TestDoRequest_Success(t *testing.T) {
 		},
 	}
 
-	req := &entity.ServiceRequest{
+	req := &entity.HTTPServiceRequest{
 		Method: entity.HTTPMethodPOST,
 	}
 
