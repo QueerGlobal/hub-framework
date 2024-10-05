@@ -18,24 +18,29 @@ import (
 
 type MockTask struct {
 	Config  map[string]any
-	handler func(*entity.ServiceRequest)
+	handler func(entity.ServiceRequest)
 }
 
 func NewMockTask(config map[string]any) (entity.Task, error) {
 	mockTask := &MockTask{Config: config}
-	mockTask.handler = func(req *entity.ServiceRequest) {
-		req.Response = &entity.ServiceResponse{
-			ResponseMeta: entity.ResponseMeta{
+	mockTask.handler = func(req entity.ServiceRequest) {
+		req.SetResponse(&entity.HttpServiceResponse{
+			ResponseMeta: &entity.HttpResponseMeta{
 				StatusCode: http.StatusOK,
 			},
 			Body: []byte("MockTask"),
-		}
+		})
 	}
 	return mockTask, nil
 }
 
-func (t *MockTask) Apply(ctx context.Context, req *entity.ServiceRequest) error {
-	req.Response = &entity.ServiceResponse{}
+func (t *MockTask) Apply(ctx context.Context, req entity.ServiceRequest) error {
+	req.SetResponse(&entity.HttpServiceResponse{
+		ResponseMeta: &entity.HttpResponseMeta{
+			StatusCode: http.StatusOK,
+		},
+		Body: []byte("MockTask"),
+	})
 	t.handler(req)
 	return nil
 }
@@ -60,9 +65,9 @@ func NewMockTarget(config map[string]any) (entity.Target, error) {
 	return &MockTarget{Config: config}, nil
 }
 
-func (t *MockTarget) Apply(ctx context.Context, req *entity.ServiceRequest) (*entity.ServiceResponse, error) {
-	return &entity.ServiceResponse{
-		ResponseMeta: entity.ResponseMeta{
+func (t *MockTarget) Apply(ctx context.Context, req entity.ServiceRequest) (entity.ServiceResponse, error) {
+	return &entity.HttpServiceResponse{
+		ResponseMeta: &entity.HttpResponseMeta{
 			StatusCode: http.StatusOK,
 		},
 		Body: []byte("MockTarget"),

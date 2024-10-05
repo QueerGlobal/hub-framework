@@ -17,7 +17,7 @@ type MockHandler struct {
 	Target           *MockTarget
 }
 
-func (m *MockHandler) Apply(ctx context.Context, req entity.ServiceRequest) (entity.ServiceResponseInterface, error) {
+func (m *MockHandler) Apply(ctx context.Context, req entity.ServiceRequest) (entity.ServiceResponse, error) {
 	if m.inboundWorkflow != nil {
 		if err := m.inboundWorkflow.Apply(ctx, req); err != nil {
 			return nil, err
@@ -25,7 +25,7 @@ func (m *MockHandler) Apply(ctx context.Context, req entity.ServiceRequest) (ent
 	}
 
 	// Simulate target execution
-	resp := &entity.ServiceResponse{}
+	resp := &entity.HttpServiceResponse{}
 
 	if m.outboundWorkflow != nil {
 		if err := m.outboundWorkflow.Apply(ctx, req); err != nil {
@@ -48,8 +48,8 @@ func (m *MockWorkflow) Apply(ctx context.Context, req entity.ServiceRequest) err
 // Mock Target for testing
 type MockTarget struct{}
 
-func (m *MockTarget) Apply(ctx context.Context, req entity.ServiceRequest) (entity.ServiceResponseInterface, error) {
-	return &entity.ServiceResponse{}, nil
+func (m *MockTarget) Apply(ctx context.Context, req entity.ServiceRequest) (entity.ServiceResponse, error) {
+	return &entity.HttpServiceResponse{}, nil
 }
 
 func TestNewService(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 )
 
 type Hub interface {
-	HandleRequest(r *http.Request) (*entity.ServiceResponse, error)
+	HandleRequest(r *http.Request) (entity.ServiceResponse, error)
 	SetLogger(l *zerolog.Logger)
 	GetLogger() *zerolog.Logger
 	GetServices() map[string]*entity.Service

@@ -24,8 +24,8 @@ type MockTask struct {
 func NewMockTask(config map[string]any) (api.Task, error) {
 	mockTask := &MockTask{Config: config}
 	mockTask.handler = func(req api.ServiceRequest) {
-		req.SetResponse(&entity.ServiceResponse{
-			ResponseMeta: entity.ResponseMeta{
+		req.SetResponse(&entity.HttpServiceResponse{
+			ResponseMeta: &entity.HttpResponseMeta{
 				StatusCode: http.StatusOK,
 			},
 			Body: []byte("MockTask"),
@@ -35,7 +35,7 @@ func NewMockTask(config map[string]any) (api.Task, error) {
 }
 
 func (t *MockTask) Apply(ctx context.Context, req api.ServiceRequest) error {
-	req.SetResponse(&entity.ServiceResponse{})
+	req.SetResponse(&entity.HttpServiceResponse{})
 	t.handler(req)
 	return nil
 }
@@ -57,8 +57,8 @@ func NewMockTarget(config map[string]any) (api.Target, error) {
 }
 
 func (t *MockTarget) Apply(ctx context.Context, req api.ServiceRequest) (api.ServiceResponse, error) {
-	return api.ServiceResponse{
-		ResponseMeta: api.ResponseMeta{
+	return &entity.HttpServiceResponse{
+		ResponseMeta: &entity.HttpResponseMeta{
 			StatusCode: http.StatusOK,
 		},
 		Body: []byte("MockTarget"),

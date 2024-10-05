@@ -8,15 +8,15 @@ import (
 )
 
 // ServiceResponseInterface represents the interface for a standardized response structure.
-type ServiceResponseInterface interface {
-	GetResponseMeta() ResponseMetaInterface
-	SetResponseMeta(meta ResponseMetaInterface)
+type ServiceResponse interface {
+	GetResponseMeta() ResponseMeta
+	SetResponseMeta(meta ResponseMeta)
 	GetBody() []byte
 	SetBody(body []byte)
 }
 
 // ResponseMetaInterface represents the interface for response metadata.
-type ResponseMetaInterface interface {
+type ResponseMeta interface {
 	GetOriginalResponse() *http.Response
 	GetStatus() string
 	SetStatus(status string)
@@ -37,13 +37,13 @@ type ResponseMetaInterface interface {
 }
 
 // ServiceResponse represents a standardized response structure used within the service.
-type ServiceResponse struct {
+type HttpServiceResponse struct {
 	ResponseMeta ResponseMeta // Metadata about the response
 	Body         []byte       // Raw body of the response
 }
 
 // ResponseMeta contains metadata about the HTTP response.
-type ResponseMeta struct {
+type HttpResponseMeta struct {
 	OriginalResponse *http.Response // The original http.Response
 	Status           string         // Status line of the response
 	StatusCode       int            // Status code of the response
@@ -63,9 +63,9 @@ type ResponseMeta struct {
 // Returns:
 //   - T: The unmarshaled entity of type T.
 //   - error: An error if unmarshaling fails, nil otherwise.
-func GetEntityFromResponse[T any](r *ServiceResponse) (T, error) {
+func GetEntityFromResponse[T any](r ServiceResponse) (T, error) {
 	var entity T
-	err := json.Unmarshal(r.Body, &entity)
+	err := json.Unmarshal(r.GetBody(), &entity)
 	return entity, err
 }
 
@@ -77,13 +77,13 @@ func GetEntityFromResponse[T any](r *ServiceResponse) (T, error) {
 // Returns:
 //   - *ServiceResponse: A pointer to the converted ServiceResponse.
 //   - error: An error if conversion fails, nil otherwise.
-func GetResponseFromHttp(r *http.Response) (*ServiceResponse, error) {
+func GetResponseFromHttp(r *http.Response) (*HttpServiceResponse, error) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
 	}
-	response := ServiceResponse{
-		ResponseMeta: ResponseMeta{
+	response := HttpServiceResponse{
+		ResponseMeta: &HttpResponseMeta{
 			OriginalResponse: r,
 			Status:           r.Status,
 			StatusCode:       r.StatusCode,
@@ -108,117 +108,115 @@ func GetResponseFromHttp(r *http.Response) (*ServiceResponse, error) {
 // Returns:
 //   - *http.Response: A pointer to the converted http.Response.
 //   - error: An error if conversion fails, nil otherwise.
-func GetHttpFromResponse(r *ServiceResponse) (*http.Response, error) {
-	responseBody := io.NopCloser(bytes.NewReader(r.Body))
-	contentLength := int64(len(r.Body))
+func GetHttpFromResponse(r ServiceResponse) (*http.Response, error) {
+	responseBody := io.NopCloser(bytes.NewReader(r.GetBody()))
+	contentLength := int64(len(r.GetBody()))
 
 	response := http.Response{
-		Status:           r.ResponseMeta.Status,
-		StatusCode:       r.ResponseMeta.StatusCode,
-		Proto:            r.ResponseMeta.Proto,
-		ProtoMajor:       r.ResponseMeta.ProtoMajor,
-		ProtoMinor:       r.ResponseMeta.ProtoMinor,
-		Header:           r.ResponseMeta.Header,
+		Status:           r.GetResponseMeta().GetStatus(),
+		StatusCode:       r.GetResponseMeta().GetStatusCode(),
+		Proto:            r.GetResponseMeta().GetProto(),
+		ProtoMajor:       r.GetResponseMeta().GetProtoMajor(),
+		ProtoMinor:       r.GetResponseMeta().GetProtoMinor(),
+		Header:           r.GetResponseMeta().GetHeader(),
 		Body:             responseBody,
 		ContentLength:    contentLength,
-		TransferEncoding: r.ResponseMeta.TransferEncoding,
+		TransferEncoding: r.GetResponseMeta().GetTransferEncoding(),
 		Close:            true,
 		Uncompressed:     false,
-		Trailer:          r.ResponseMeta.Trailer,
+		Trailer:          r.GetResponseMeta().GetTrailer(),
 	}
 	return &response, nil
 }
 
 // ServiceResponse methods
 
-func (sr *ServiceResponse) GetResponseMeta() ResponseMetaInterface {
-	return &sr.ResponseMeta
+func (sr *HttpServiceResponse) GetResponseMeta() ResponseMeta {
+	return sr.ResponseMeta
 }
 
-func (sr *ServiceResponse) SetResponseMeta(meta ResponseMetaInterface) {
-	if responseMeta, ok := meta.(*ResponseMeta); ok {
-		sr.ResponseMeta = *responseMeta
-	}
+func (sr *HttpServiceResponse) SetResponseMeta(meta ResponseMeta) {
+	sr.ResponseMeta = meta
 }
 
-func (sr *ServiceResponse) GetBody() []byte {
+func (sr *HttpServiceResponse) GetBody() []byte {
 	return sr.Body
 }
 
-func (sr *ServiceResponse) SetBody(body []byte) {
+func (sr *HttpServiceResponse) SetBody(body []byte) {
 	sr.Body = body
 }
 
 // ResponseMeta methods
 
-func (rm *ResponseMeta) GetOriginalResponse() *http.Response {
+func (rm *HttpResponseMeta) GetOriginalResponse() *http.Response {
 	return rm.OriginalResponse
 }
 
-func (rm *ResponseMeta) SetOriginalResponse(resp *http.Response) {
+func (rm *HttpResponseMeta) SetOriginalResponse(resp *http.Response) {
 	rm.OriginalResponse = resp
 }
 
-func (rm *ResponseMeta) GetStatus() string {
+func (rm *HttpResponseMeta) GetStatus() string {
 	return rm.Status
 }
 
-func (rm *ResponseMeta) SetStatus(status string) {
+func (rm *HttpResponseMeta) SetStatus(status string) {
 	rm.Status = status
 }
 
-func (rm *ResponseMeta) GetStatusCode() int {
+func (rm *HttpResponseMeta) GetStatusCode() int {
 	return rm.StatusCode
 }
 
-func (rm *ResponseMeta) SetStatusCode(code int) {
+func (rm *HttpResponseMeta) SetStatusCode(code int) {
 	rm.StatusCode = code
 }
 
-func (rm *ResponseMeta) GetProto() string {
+func (rm *HttpResponseMeta) GetProto() string {
 	return rm.Proto
 }
 
-func (rm *ResponseMeta) SetProto(proto string) {
+func (rm *HttpResponseMeta) SetProto(proto string) {
 	rm.Proto = proto
 }
 
-func (rm *ResponseMeta) GetProtoMajor() int {
+func (rm *HttpResponseMeta) GetProtoMajor() int {
 	return rm.ProtoMajor
 }
 
-func (rm *ResponseMeta) SetProtoMajor(major int) {
+func (rm *HttpResponseMeta) SetProtoMajor(major int) {
 	rm.ProtoMajor = major
 }
 
-func (rm *ResponseMeta) GetProtoMinor() int {
+func (rm *HttpResponseMeta) GetProtoMinor() int {
 	return rm.ProtoMinor
 }
 
-func (rm *ResponseMeta) SetProtoMinor(minor int) {
+func (rm *HttpResponseMeta) SetProtoMinor(minor int) {
 	rm.ProtoMinor = minor
 }
 
-func (rm *ResponseMeta) GetTransferEncoding() []string {
+func (rm *HttpResponseMeta) GetTransferEncoding() []string {
 	return rm.TransferEncoding
 }
 
-func (rm *ResponseMeta) SetTransferEncoding(encoding []string) {
+func (rm *HttpResponseMeta) SetTransferEncoding(encoding []string) {
 	rm.TransferEncoding = encoding
 }
 
-func (rm *ResponseMeta) GetHeader() http.Header {
+func (rm *HttpResponseMeta) GetHeader() http.Header {
 	return rm.Header
 }
 
-func (rm *ResponseMeta) SetHeader(header http.Header) {
+func (rm *HttpResponseMeta) SetHeader(header http.Header) {
 	rm.Header = header
 }
 
-func (rm *ResponseMeta) GetTrailer() http.Header {
+func (rm *HttpResponseMeta) GetTrailer() http.Header {
 	return rm.Trailer
 }
 
-func (rm *ResponseMeta) SetTrailer(trailer http.Header) {
+func (rm *HttpResponseMeta) SetTrailer(trailer http.Header) {
 	rm.Trailer = trailer
 }

@@ -11,7 +11,7 @@ import (
 )
 
 type RequestForwarder interface {
-	HandleRequest(r *http.Request) (*entity.ServiceResponse, error)
+	HandleRequest(r *http.Request) (entity.ServiceResponse, error)
 }
 
 type RequestHandler struct {
@@ -70,15 +70,15 @@ func (handler *RequestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	for header, values := range response.ResponseMeta.Header {
+	for header, values := range response.GetResponseMeta().GetHeader() {
 		for _, value := range values {
 			w.Header().Add(header, value)
 		}
 	}
 
-	w.WriteHeader(response.ResponseMeta.StatusCode)
+	w.WriteHeader(response.GetResponseMeta().GetStatusCode())
 
-	if _, err := w.Write(response.Body); err != nil {
+	if _, err := w.Write(response.GetBody()); err != nil {
 		log.Printf("Error writing response body: %v", err)
 		return
 	}

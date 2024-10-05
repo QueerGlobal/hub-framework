@@ -26,8 +26,8 @@ type ServiceRequest interface {
 	SetPostForm(form *url.Values)
 	GetMultipart() MultipartDataInterface
 	SetMultipart(data MultipartDataInterface)
-	GetResponse() ServiceResponseInterface
-	SetResponse(response ServiceResponseInterface)
+	GetResponse() ServiceResponse
+	SetResponse(response ServiceResponse)
 	GetRequestMeta() RequestMetaInterface
 	SetRequestMeta(meta RequestMetaInterface)
 	GetHeader() http.Header
@@ -288,14 +288,12 @@ func (sr *HTTPServiceRequest) SetMultipart(data MultipartDataInterface) {
 	}
 }
 
-func (sr *HTTPServiceRequest) GetResponse() ServiceResponseInterface {
-	return sr.Response
+func (sr *HTTPServiceRequest) GetResponse() ServiceResponse {
+	return *sr.Response
 }
 
-func (sr *HTTPServiceRequest) SetResponse(response ServiceResponseInterface) {
-	if serviceResponse, ok := response.(*ServiceResponse); ok {
-		sr.Response = serviceResponse
-	}
+func (sr *HTTPServiceRequest) SetResponse(response ServiceResponse) {
+	sr.Response = &response
 }
 
 func (sr *HTTPServiceRequest) GetRequestMeta() RequestMetaInterface {
