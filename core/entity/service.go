@@ -62,7 +62,7 @@ func NewService(apiName, name, schemaName, schemaVersion string, public bool) (*
 //
 // Returns:
 //   - error: Any error encountered during processing, or nil if successful.
-func (service *Service) DoRequest(ctx context.Context, request *ServiceRequest) error {
+func (service *Service) DoRequest(ctx context.Context, request ServiceRequest) error {
 	if request == nil {
 		return domainerr.ErrEmptyInput
 	}
@@ -73,11 +73,11 @@ func (service *Service) DoRequest(ctx context.Context, request *ServiceRequest) 
 		defer cancel()
 	}
 
-	method := request.Method
+	method := request.GetMethod()
 
 	handler, ok := service.Methods[method]
 	if !ok {
-		return fmt.Errorf("method %s not found for service %s, %w", method, request.ServiceName, ErrMethodNotConfigured)
+		return fmt.Errorf("method %s not found for service %s, %w", method, request.GetServiceName(), ErrMethodNotConfigured)
 	}
 
 	if handler.InboundWorkflow != nil {
@@ -87,7 +87,7 @@ func (service *Service) DoRequest(ctx context.Context, request *ServiceRequest) 
 		}
 	}
 
-	var response *ServiceResponse
+	var response ServiceResponse
 	var err error
 
 	if handler.Target == nil {
@@ -103,7 +103,7 @@ func (service *Service) DoRequest(ctx context.Context, request *ServiceRequest) 
 		return domainerr.ErrEmptyResponse
 	}
 
-	request.Response = response
+	request.SetResponse(response)
 
 	if handler.OutboundWorkflow != nil {
 		err := handler.OutboundWorkflow.Apply(ctx, request)

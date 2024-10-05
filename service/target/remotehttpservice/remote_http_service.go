@@ -76,7 +76,7 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 		return nil
 	})
 	if err != nil {
-		return entity.ServiceResponse{}, err
+		return nil, err
 	}
 
 	return serviceResponse, nil
@@ -89,8 +89,8 @@ func (fs *ForwardingService) forwardRequest(request entity.ServiceRequest) (*htt
 	}
 
 	requestPath := ""
-	if request.URL != nil {
-		requestPath = request.URL.Path
+	if request.GetURL() != nil {
+		requestPath = request.GetURL().Path
 	}
 
 	urlString := fs.Host + fs.PathPrefix + requestPath

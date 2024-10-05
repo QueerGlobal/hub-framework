@@ -12,6 +12,6 @@ def start(yaml_file_path):
     return app
 
 if __name__ == '__main__':
-    yaml_file_path = 'path/to/your/handlers.yaml'
+    yaml_file_path = os.getenv('YAML_FILE_PATH')
     app = start(yaml_file_path)
     app.run(debug=True)

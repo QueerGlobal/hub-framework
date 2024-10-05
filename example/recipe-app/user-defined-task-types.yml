@@ -1,0 +1,10 @@
+apiVersion: v1
+specType: Tasks
+spec:
+  tasks:
+    - name: "exampleTaskGolang"
+      description: "Example golang task"
+      language: "go"
+      config:
+        importPath: "github.com/QueerGlobal/hub-framework/example/recipe-app/golang/exampleTaskGolang"
+        handlerName: "ExampleTaskGolang"

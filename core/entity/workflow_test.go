@@ -13,11 +13,11 @@ import (
 
 // MockTask for testing
 type MockTask struct {
-	applyFunc func(ctx context.Context, req *entity.ServiceRequest) error
+	applyFunc func(ctx context.Context, req entity.ServiceRequest) error
 	name      string
 }
 
-func (m *MockTask) Apply(ctx context.Context, req *entity.ServiceRequest) error {
+func (m *MockTask) Apply(ctx context.Context, req entity.ServiceRequest) error {
 	return m.applyFunc(ctx, req)
 }
 
@@ -32,8 +32,9 @@ func mockStep(precedence int) *entity.WorkflowStep {
 		Precedence: precedence,
 		TaskType:   "MockType",
 		Task: &MockTask{
-			applyFunc: func(ctx context.Context, req *entity.ServiceRequest) error {
-				req.Body = append(req.Body, []byte("+mockstep"+strconv.Itoa(precedence))...)
+			applyFunc: func(ctx context.Context, req entity.ServiceRequest) error {
+				body := append(req.GetBody(), []byte("+mockstep"+strconv.Itoa(precedence))...)
+				req.SetBody(body)
 				return nil
 			},
 			name: "MockTask",
@@ -41,10 +42,10 @@ func mockStep(precedence int) *entity.WorkflowStep {
 	}
 }
 
-func mockServiceRequest() *entity.ServiceRequest {
+func mockServiceRequest() *entity.HTTPServiceRequest {
 	mockURL, _ := url.Parse("https://example.com")
 
-	someServiceRequest := entity.ServiceRequest{
+	someServiceRequest := entity.HTTPServiceRequest{
 		ApiName:     "TestAPI",
 		ServiceName: "TestService",
 		Method:      "POST",
@@ -79,7 +80,7 @@ func TestWorkflow_Apply(t *testing.T) {
 
 	wf := entity.NewWorkflowTasks([]*entity.WorkflowStep{step1, step2, step3}...)
 
-	req := entity.ServiceRequest{
+	req := entity.HTTPServiceRequest{
 		Body: []byte("TESTSR"),
 	}
 	err := wf.Apply(context.Background(), &req)
@@ -93,8 +94,9 @@ func TestWorkflow_Apply_TaskError(t *testing.T) {
 		Precedence: 1,
 		TaskType:   "MockType",
 		Task: &MockTask{
-			applyFunc: func(ctx context.Context, req *entity.ServiceRequest) error {
-				req.Body = append(req.Body, []byte("+mockstep1")...)
+			applyFunc: func(ctx context.Context, req entity.ServiceRequest) error {
+				body := append(req.GetBody(), []byte("+mockstep1")...)
+				req.SetBody(body)
 				return nil
 			},
 			name: "MockTask",
@@ -106,7 +108,7 @@ func TestWorkflow_Apply_TaskError(t *testing.T) {
 		Precedence: 2,
 		TaskType:   "MockType",
 		Task: &MockTask{
-			applyFunc: func(ctx context.Context, req *entity.ServiceRequest) error {
+			applyFunc: func(ctx context.Context, req entity.ServiceRequest) error {
 				return errors.New("task error")
 			},
 			name: "MockTask2",
@@ -115,7 +117,7 @@ func TestWorkflow_Apply_TaskError(t *testing.T) {
 
 	wf := entity.NewWorkflowTasks(step1, step2)
 
-	req := entity.ServiceRequest{Body: []byte("TEST")}
+	req := entity.HTTPServiceRequest{Body: []byte("TEST")}
 	err := wf.Apply(context.Background(), &req)
 	assert.EqualError(t, err, "task error")
 }

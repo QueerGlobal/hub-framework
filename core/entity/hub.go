@@ -74,7 +74,7 @@ func (hub *Hub) GetService(apiName string, serviceName string) (*Service, bool) 
 // Returns:
 //   - A pointer to ServiceResponse and nil error on success.
 //   - nil and an error if request handling fails.
-func (hub *Hub) HandleRequest(r *http.Request) (*ServiceResponse, error) {
+func (hub *Hub) HandleRequest(r *http.Request) (ServiceResponse, error) {
 	request, err := GetRequestFromHttp(r)
 	if err != nil {
 		hub.logger.Err(err).Str("apiName", request.ApiName).
@@ -103,25 +103,25 @@ func (hub *Hub) HandleRequest(r *http.Request) (*ServiceResponse, error) {
 // Returns:
 //   - A pointer to ServiceResponse and nil error on success.
 //   - A pointer to ServiceResponse with error details and an error on failure.
-func (hub *Hub) executeServiceRequest(ctx context.Context, request *ServiceRequest) (*ServiceResponse, error) {
-	response := &ServiceResponse{}
-	response.ResponseMeta = ResponseMeta{}
+func (hub *Hub) executeServiceRequest(ctx context.Context, request ServiceRequest) (ServiceResponse, error) {
+	response := &HttpServiceResponse{}
+	response.ResponseMeta = &HttpResponseMeta{}
 
-	service, ok := hub.GetService(request.ApiName, request.ServiceName)
+	service, ok := hub.GetService(request.GetAPIName(), request.GetServiceName())
 	if !ok {
-		err := fmt.Errorf("service %s not found %w", request.ServiceName, domainerr.ErrServiceNotFound)
-		hub.logger.Err(err).Str("apiName", request.ApiName).Str("serviceName", request.ServiceName).Msg("service not found")
-		response.ResponseMeta.StatusCode = http.StatusNotFound
+		err := fmt.Errorf("service %s not found %w", request.GetServiceName(), domainerr.ErrServiceNotFound)
+		hub.logger.Err(err).Str("apiName", request.GetAPIName()).Str("serviceName", request.GetServiceName()).Msg("service not found")
+		response.ResponseMeta.SetStatusCode(http.StatusNotFound)
 		return response, err
 	}
 
 	if err := service.DoRequest(ctx, request); err != nil {
-		hub.logger.Err(err).Str("apiName", request.ApiName).Str("serviceName", request.ServiceName).Msg("failed to execute service request")
-		response.ResponseMeta.StatusCode = http.StatusInternalServerError
+		hub.logger.Err(err).Str("apiName", request.GetAPIName()).Str("serviceName", request.GetServiceName()).Msg("failed to execute service request")
+		response.ResponseMeta.SetStatusCode(http.StatusInternalServerError)
 		return response, err
 	}
 
-	return request.Response, nil
+	return request.GetResponse(), nil
 }
 
 // SetLogger sets the logger for the Hub.

@@ -9,7 +9,7 @@ import (
 
 // Workflow is the interface for a workflow that can be applied to a ServiceRequest.
 type Workflow interface {
-	Apply(ctx context.Context, in *ServiceRequest) error
+	Apply(ctx context.Context, in ServiceRequest) error
 }
 
 // Workflow is a chain of workflow steps that can be applied sequentially
@@ -49,7 +49,7 @@ func (w *WorkflowTasks) add(
 // Apply applies all transformations in this chain, in order of precedence
 func (chain *WorkflowTasks) Apply(
 	ctx context.Context,
-	in *ServiceRequest) error {
+	in ServiceRequest) error {
 
 	keys := maps.Keys(chain.Steps)
 	sort.Ints(keys)

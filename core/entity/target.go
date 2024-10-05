@@ -11,23 +11,23 @@ to a Task, but accepts a ServiceRequest and returns ServiceResponse
 It will usually handle writing an entity to some persistence medium.
 */
 type Target interface {
-	Apply(ctx context.Context, request *ServiceRequest) (*ServiceResponse, error)
+	Apply(ctx context.Context, request ServiceRequest) (ServiceResponse, error)
 }
 
 type NoOpTarget struct{}
 
-func (t *NoOpTarget) Apply(ctx context.Context, request *ServiceRequest) (*ServiceResponse, error) {
-	response := &ServiceResponse{
-		ResponseMeta: ResponseMeta{
+func (t *NoOpTarget) Apply(ctx context.Context, request ServiceRequest) (ServiceResponse, error) {
+	response := &HttpServiceResponse{
+		ResponseMeta: &HttpResponseMeta{
 			StatusCode:       http.StatusOK,
-			Proto:            request.RequestMeta.Proto,
-			ProtoMajor:       request.RequestMeta.ProtoMajor,
-			ProtoMinor:       request.RequestMeta.ProtoMinor,
-			Header:           request.Header.Clone(),
-			Trailer:          request.Trailer.Clone(),
-			TransferEncoding: request.RequestMeta.TransferEncoding,
+			Proto:            request.GetRequestMeta().GetProto(),
+			ProtoMajor:       request.GetRequestMeta().GetProtoMajor(),
+			ProtoMinor:       request.GetRequestMeta().GetProtoMinor(),
+			Header:           request.GetHeader().Clone(),
+			Trailer:          request.GetTrailer().Clone(),
+			TransferEncoding: request.GetRequestMeta().GetTransferEncoding(),
 		},
-		Body: request.Body,
+		Body: request.GetBody(),
 	}
 	return response, nil
 }

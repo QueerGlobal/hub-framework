@@ -11,8 +11,65 @@ import (
 	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
 )
 
+// ServiceRequestInterface represents the interface for a standardized request structure.
+type ServiceRequest interface {
+	GetAPIName() string
+	GetServiceName() string
+	GetMethod() HTTPMethod
+	GetURL() *url.URL
+	GetInternalPath() string
+	GetBody() []byte
+	SetBody(body []byte)
+	GetForm() *url.Values
+	SetForm(form *url.Values)
+	GetPostForm() *url.Values
+	SetPostForm(form *url.Values)
+	GetMultipart() MultipartDataInterface
+	SetMultipart(data MultipartDataInterface)
+	GetResponse() ServiceResponse
+	SetResponse(response ServiceResponse)
+	GetRequestMeta() RequestMetaInterface
+	SetRequestMeta(meta RequestMetaInterface)
+	GetHeader() http.Header
+	SetHeader(header http.Header)
+	GetTrailer() http.Header
+	SetTrailer(trailer http.Header)
+}
+
+// MultipartDataInterface represents the interface for multipart form data.
+type MultipartDataInterface interface {
+	GetValue() map[string][]string
+	SetValue(value map[string][]string)
+	GetFileData() map[string][]byte
+	SetFileData(fileData map[string][]byte)
+}
+
+// RequestMetaInterface represents the interface for request metadata.
+type RequestMetaInterface interface {
+	GetOriginalRequest() *http.Request
+	SetOriginalRequest(req *http.Request)
+	GetParams() map[string]string
+	SetParams(params map[string]string)
+	GetProto() string
+	SetProto(proto string)
+	GetProtoMajor() int
+	SetProtoMajor(major int)
+	GetProtoMinor() int
+	SetProtoMinor(minor int)
+	GetContentLength() int64
+	SetContentLength(length int64)
+	GetTransferEncoding() []string
+	SetTransferEncoding(encoding []string)
+	GetHost() string
+	SetHost(host string)
+	GetRemoteAddr() string
+	SetRemoteAddr(addr string)
+	GetRequestURI() string
+	SetRequestURI(uri string)
+}
+
 // ServiceRequest represents a standardized request structure used within the service.
-type ServiceRequest struct {
+type HTTPServiceRequest struct {
 	ApiName      string           // Name of the API being called
 	ServiceName  string           // Name of the specific service within the API
 	Method       HTTPMethod       // HTTP method of the request
@@ -56,7 +113,7 @@ type RequestMeta struct {
 // Returns:
 //   - T: The unmarshaled entity of type T.
 //   - error: An error if unmarshaling fails, nil otherwise.
-func GetEntityFromRequest[T any](r *ServiceRequest) (T, error) {
+func GetEntityFromRequest[T any](r *HTTPServiceRequest) (T, error) {
 	var entity T
 	if err := json.Unmarshal(r.Body, &entity); err != nil {
 		return entity, err
@@ -72,7 +129,7 @@ func GetEntityFromRequest[T any](r *ServiceRequest) (T, error) {
 // Returns:
 //   - *ServiceRequest: A pointer to the converted ServiceRequest.
 //   - error: An error if conversion fails, nil otherwise.
-func GetRequestFromHttp(r *http.Request) (*ServiceRequest, error) {
+func GetRequestFromHttp(r *http.Request) (*HTTPServiceRequest, error) {
 	if r == nil {
 		return nil, domainerr.ErrEmptyInput
 	}
@@ -132,7 +189,7 @@ func GetRequestFromHttp(r *http.Request) (*ServiceRequest, error) {
 		return nil, err
 	}
 
-	response := ServiceRequest{
+	response := HTTPServiceRequest{
 		Method:       httpMethod,
 		ApiName:      apiName,
 		ServiceName:  serviceName,
@@ -153,4 +210,214 @@ func GetRequestFromHttp(r *http.Request) (*ServiceRequest, error) {
 	}
 
 	return &response, nil
+}
+
+// ServiceRequest methods
+
+func (sr *HTTPServiceRequest) GetAPIName() string {
+	return sr.ApiName
+}
+
+func (sr *HTTPServiceRequest) SetAPIName(name string) {
+	sr.ApiName = name
+}
+
+func (sr *HTTPServiceRequest) GetServiceName() string {
+	return sr.ServiceName
+}
+
+func (sr *HTTPServiceRequest) SetServiceName(name string) {
+	sr.ServiceName = name
+}
+
+func (sr *HTTPServiceRequest) GetMethod() HTTPMethod {
+	return sr.Method
+}
+
+func (sr *HTTPServiceRequest) SetMethod(method HTTPMethod) {
+	sr.Method = method
+}
+
+func (sr *HTTPServiceRequest) GetURL() *url.URL {
+	return sr.URL
+}
+
+func (sr *HTTPServiceRequest) SetURL(url *url.URL) {
+	sr.URL = url
+}
+
+func (sr *HTTPServiceRequest) GetInternalPath() string {
+	return sr.InternalPath
+}
+
+func (sr *HTTPServiceRequest) SetInternalPath(path string) {
+	sr.InternalPath = path
+}
+
+func (sr *HTTPServiceRequest) GetBody() []byte {
+	return sr.Body
+}
+
+func (sr *HTTPServiceRequest) SetBody(body []byte) {
+	sr.Body = body
+}
+
+func (sr *HTTPServiceRequest) GetForm() *url.Values {
+	return sr.Form
+}
+
+func (sr *HTTPServiceRequest) SetForm(form *url.Values) {
+	sr.Form = form
+}
+
+func (sr *HTTPServiceRequest) GetPostForm() *url.Values {
+	return sr.PostForm
+}
+
+func (sr *HTTPServiceRequest) SetPostForm(form *url.Values) {
+	sr.PostForm = form
+}
+
+func (sr *HTTPServiceRequest) GetMultipart() MultipartDataInterface {
+	return sr.Multipart
+}
+
+func (sr *HTTPServiceRequest) SetMultipart(data MultipartDataInterface) {
+	if multipartData, ok := data.(*MultipartData); ok {
+		sr.Multipart = multipartData
+	}
+}
+
+func (sr *HTTPServiceRequest) GetResponse() ServiceResponse {
+	return *sr.Response
+}
+
+func (sr *HTTPServiceRequest) SetResponse(response ServiceResponse) {
+	sr.Response = &response
+}
+
+func (sr *HTTPServiceRequest) GetRequestMeta() RequestMetaInterface {
+	return &sr.RequestMeta
+}
+
+func (sr *HTTPServiceRequest) SetRequestMeta(meta RequestMetaInterface) {
+	if requestMeta, ok := meta.(*RequestMeta); ok {
+		sr.RequestMeta = *requestMeta
+	}
+}
+
+func (sr *HTTPServiceRequest) GetHeader() http.Header {
+	return sr.Header
+}
+
+func (sr *HTTPServiceRequest) SetHeader(header http.Header) {
+	sr.Header = header
+}
+
+func (sr *HTTPServiceRequest) GetTrailer() http.Header {
+	return sr.Trailer
+}
+
+func (sr *HTTPServiceRequest) SetTrailer(trailer http.Header) {
+	sr.Trailer = trailer
+}
+
+// MultipartData methods
+
+func (md *MultipartData) GetValue() map[string][]string {
+	return md.Value
+}
+
+func (md *MultipartData) SetValue(value map[string][]string) {
+	md.Value = value
+}
+
+func (md *MultipartData) GetFileData() map[string][]byte {
+	return md.FileData
+}
+
+func (md *MultipartData) SetFileData(fileData map[string][]byte) {
+	md.FileData = fileData
+}
+
+// RequestMeta methods
+
+func (rm *RequestMeta) GetOriginalRequest() *http.Request {
+	return rm.OriginalRequest
+}
+
+func (rm *RequestMeta) SetOriginalRequest(req *http.Request) {
+	rm.OriginalRequest = req
+}
+
+func (rm *RequestMeta) GetParams() map[string]string {
+	return rm.Params
+}
+
+func (rm *RequestMeta) SetParams(params map[string]string) {
+	rm.Params = params
+}
+
+func (rm *RequestMeta) GetProto() string {
+	return rm.Proto
+}
+
+func (rm *RequestMeta) SetProto(proto string) {
+	rm.Proto = proto
+}
+
+func (rm *RequestMeta) GetProtoMajor() int {
+	return rm.ProtoMajor
+}
+
+func (rm *RequestMeta) SetProtoMajor(major int) {
+	rm.ProtoMajor = major
+}
+
+func (rm *RequestMeta) GetProtoMinor() int {
+	return rm.ProtoMinor
+}
+
+func (rm *RequestMeta) SetProtoMinor(minor int) {
+	rm.ProtoMinor = minor
+}
+
+func (rm *RequestMeta) GetContentLength() int64 {
+	return rm.ContentLength
+}
+
+func (rm *RequestMeta) SetContentLength(length int64) {
+	rm.ContentLength = length
+}
+
+func (rm *RequestMeta) GetTransferEncoding() []string {
+	return rm.TransferEncoding
+}
+
+func (rm *RequestMeta) SetTransferEncoding(encoding []string) {
+	rm.TransferEncoding = encoding
+}
+
+func (rm *RequestMeta) GetHost() string {
+	return rm.Host
+}
+
+func (rm *RequestMeta) SetHost(host string) {
+	rm.Host = host
+}
+
+func (rm *RequestMeta) GetRemoteAddr() string {
+	return rm.RemoteAddr
+}
+
+func (rm *RequestMeta) SetRemoteAddr(addr string) {
+	rm.RemoteAddr = addr
+}
+
+func (rm *RequestMeta) GetRequestURI() string {
+	return rm.RequestURI
+}
+
+func (rm *RequestMeta) SetRequestURI(uri string) {
+	rm.RequestURI = uri
 }
