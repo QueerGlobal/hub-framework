@@ -66,7 +66,7 @@ spec:
       outbound:
         - name: ResponseCodeLogger
           type: LogWriter
-           precedence: 32000 # use a large precedence value so that response code is logged after all other steps
+          precedence: 32000 # use a large precedence value so that response code is logged after all other steps
           description: "log response code upon processing complete"
           executionType: sync
           onError: LogAndFail

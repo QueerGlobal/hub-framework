@@ -3,12 +3,12 @@ package api
 import (
 	"fmt"
 	"log"
-	"os"
 	"sync"
 
 	"github.com/QueerGlobal/hub-framework/adapter/config/yaml"
 	"github.com/QueerGlobal/hub-framework/adapter/handler/requesthandler"
 	"github.com/QueerGlobal/hub-framework/core/entity"
+	"github.com/QueerGlobal/hub-framework/service/logging"
 	"github.com/rs/zerolog"
 )
 
@@ -83,15 +83,10 @@ func NewApplication(applicationName string, opts ...Option) *Application {
 	return &s
 }
 
-func (a *Application) createLogger() *zerolog.Logger {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+func (a *Application) createHub(applicationName string) (Hub, error) {
+	logging.SetLogLevel(a.LogLevel.ToZeroLogLevel())
+	logger := logging.GetLogger()
 
-	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
-
-	return &logger
-}
-
-func (a *Application) createHub(applicationName string, logger *zerolog.Logger) (Hub, error) {
 	hub, err := entity.NewHub(logger, applicationName)
 	if err != nil {
 		logger.Err(err).Msgf("error initializing hub")
@@ -133,9 +128,8 @@ func (a *Application) startHub() error {
 }
 
 func (a *Application) Start() error {
-	logger := a.createLogger()
-
-	hub, err := a.createHub(a.ApplicationName, logger)
+	// create the hub
+	hub, err := a.createHub(a.ApplicationName)
 	if err != nil {
 		err = fmt.Errorf("failed to start hub service: %w", err)
 		log.Println(err)
@@ -150,6 +144,7 @@ func (a *Application) Start() error {
 		return fmt.Errorf("failed to create hub")
 	}
 
+	// configure based on the yaml files
 	err = configurer.ConfigureHub(hub.(*entity.Hub))
 	if err != nil {
 		err = fmt.Errorf("failed to configure hub: %w", err)
@@ -157,6 +152,7 @@ func (a *Application) Start() error {
 		return err
 	}
 
+	// start the hub
 	if err := a.startHub(); err != nil {
 		err = fmt.Errorf("failed to start hub service: %w", err)
 		log.Println(err)

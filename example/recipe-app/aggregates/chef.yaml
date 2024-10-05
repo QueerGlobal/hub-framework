@@ -1,11 +1,14 @@
 apiVersion: v1
 specType: Aggregate
 spec:
-  name: chefs
+  name: chef
   apiName: recipeApp
   isPublic: true
   schemaName: Person
   schemaVersion: v0.0.1
+  target:
+    name: persisChef 
+    type: Badger
   handlers:
     - methods: ["GET", "PUT", "POST", "DELETE"]
       inbound:
@@ -32,10 +35,22 @@ spec:
           enabled: True
           config:
             logAtLevel: INFO
+            fields:
+              - name: responseBody
+                value: "{{.Response.Body}}"
         - name: ResponseCodeLogger
           type: LogWriter
           precedence: 32000 # use a large precedence value so that response code is logged after all other steps
-
+          enabled: true
+          config:
+            logAtLevel: INFO
+            fields:
+              - name: responseCode
+                value: "{{.Response.StatusCode}}"
+              - name: method
+                value: "{{.Method}}"
+              - name: path
+                value: "{{.URL.Path}}"
     - methods: ["GET"]
       inbound:
         - name: RequestLogger
@@ -50,12 +65,17 @@ spec:
       outbound:
         - name: ResponseCodeLogger
           type: LogWriter
-           precedence: 32000 # use a large precedence value so that response code is logged after all other steps
+          precedence: 32000 # use a large precedence value so that response code is logged after all other steps
           description: "log response code upon processing complete"
           executionType: sync
           onError: LogAndFail
-          enabled: True
+          enabled: true
           config:
             logAtLevel: INFO
-
-      
+            fields:
+              - name: path
+                value: "{{.Request.URL.Path}}"
+              - name: method
+                value: "{{.Request.Method}}"
+              - name: responseCode
+                value: "{{.Response.StatusCode}}"

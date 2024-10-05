@@ -11,11 +11,11 @@ import (
 
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Welcome to {{.ApplicationName}}!")
+		fmt.Fprintf(w, "Welcome to exampleApp!")
 	})
 
 	// Example of using the API client
-	app := api.NewApplication("{{.ApplicationName}}", api.WithLogLevel(api.InfoLevel))
+	app := api.NewApplication("exampleApp", api.WithLogLevel(api.InfoLevel))
 	if app == nil {
 		log.Printf("Error creating application")
 		return
@@ -29,4 +29,11 @@ func main() {
 
 	log.Printf("Starting {{.ApplicationName}} server on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
+
+	err := app.Start()
+	defer app.Stop()
+	if err != nil {
+		log.Printf("Error starting application: %v", err)
+		return
+	}
 }
