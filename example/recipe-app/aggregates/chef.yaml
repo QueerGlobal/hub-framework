@@ -7,28 +7,22 @@ spec:
   schemaName: Person
   schemaVersion: v0.0.1
   target:
-    name: persisChef 
+    name: persistChef 
     type: Badger
   handlers:
     - methods: ["GET", "PUT", "POST", "DELETE"]
       inbound:
         - name: requestLogger
-          ref: builtin.RequestLogger
+          type: RequestLogger
           precedence: 1
           executionType: async
           config:
             logFilePath: "/var/log/my-servicename"
-        - name: internalTokenCreator
-          type: oryCookieToTokenTransformer
-          executionType: sync
-          precedence: 2
-          config:
-            ketoHome: "home"
       outbound:
         - name: ResponseBodyLogger
           description: "log response body"
           precedence: 1
-          type: LogWriter
+          type: ResponseLogger
           executionType: sync
           mustFinish: false
           onError: Ignore
@@ -54,7 +48,7 @@ spec:
     - methods: ["GET"]
       inbound:
         - name: RequestLogger
-          type: LogWriter
+          type: RequestLogger
           precedence: 2
           executionType: sync
           mustFinish: true

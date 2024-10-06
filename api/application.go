@@ -9,6 +9,7 @@ import (
 	"github.com/QueerGlobal/hub-framework/adapter/handler/requesthandler"
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/service/logging"
+	"github.com/QueerGlobal/hub-framework/service/task/builtin"
 	"github.com/rs/zerolog"
 )
 
@@ -83,6 +84,32 @@ func NewApplication(applicationName string, opts ...Option) *Application {
 	return &s
 }
 
+func (a *Application) registerBuiltinTasks() error {
+	// Register the LogWriter task type
+	logWriterTaskConstructor := entity.TaskConstructorFromFunction(builtin.NewLogWriterTask)
+	entity.RegisterTaskType("LogWriter", logWriterTaskConstructor)
+
+	fmt.Println("registered tasks")
+	fmt.Println(entity.TaskRegistry())
+
+	// Register the RequestLogger task type
+	requestLoggerTaskConstructor := entity.TaskConstructorFromFunction(builtin.NewRequestLoggerTask)
+	entity.RegisterTaskType("RequestLogger", requestLoggerTaskConstructor)
+
+	fmt.Println("registered tasks")
+	fmt.Println(entity.TaskRegistry())
+
+	// Register the ResponseLogger task type
+	responseLoggerTaskConstructor := entity.TaskConstructorFromFunction(builtin.NewResponseLoggerTask)
+	entity.RegisterTaskType("ResponseLogger", responseLoggerTaskConstructor)
+
+	fmt.Println("registered tasks")
+	fmt.Println(entity.TaskRegistry())
+
+	// Register other built-in tasks here if needed
+	return nil
+}
+
 func (a *Application) createHub(applicationName string) (Hub, error) {
 	logging.SetLogLevel(a.LogLevel.ToZeroLogLevel())
 	logger := logging.GetLogger()
@@ -137,6 +164,13 @@ func (a *Application) Start() error {
 	}
 
 	a.Hub = hub
+
+	err = a.registerBuiltinTasks()
+	if err != nil {
+		err = fmt.Errorf("failed to register built-in tasks: %w", err)
+		log.Println(err)
+		return err
+	}
 
 	configurer := yaml.NewConfigurer(a.ApplicationHome)
 

@@ -1,4 +1,4 @@
-package logging
+package builtin
 
 import (
 	"context"
@@ -21,13 +21,17 @@ type LogField struct {
 	Value string
 }
 
-func NewLogWriter(name string, config map[string]interface{}) *LogWriter {
+func NewLogWriterTask(config map[string]interface{}) (entity.Task, error) {
 	lw := &LogWriter{
-		name:     name,
+		name:     "",
 		LogLevel: "INFO",
 	}
 
-	if level, ok := config["logAtLevel"].(string); ok {
+	if name, ok := config["name"].(string); ok {
+		lw.name = name
+	}
+
+	if level, ok := config["logLevel"].(string); ok {
 		lw.LogLevel = level
 	}
 
@@ -42,7 +46,7 @@ func NewLogWriter(name string, config map[string]interface{}) *LogWriter {
 		}
 	}
 
-	return lw
+	return lw, nil
 }
 
 func (lw *LogWriter) Name() string {
