@@ -39,3 +39,11 @@ func RegisterTargetType(name string, targetConstructor TargetConstructor) {
 func GetTarget(targetName string, config map[string]interface{}) (entity.Target, error) {
 	return entity.GetTarget(targetName, config)
 }
+
+// TargetConstructorFromFunction creates a TargetConstructorFunc from a function
+// with the signature func(map[string]interface{}) (T, error), where T implements Target
+func TargetConstructorFromFunction(
+	fn func(map[string]interface{}) (Target, error),
+) TargetConstructorFunc {
+	return TargetConstructorFunc(fn)
+}

@@ -22,8 +22,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const repoName string = "Badger"
-
 // Repository encapsulates the BadgerDB instance for managing stored values.
 type Repository[T any] struct {
 	db     *badger.DB
@@ -52,10 +50,6 @@ func NewRepository[T any](config *map[string]any) (*Repository[T], error) {
 	repo.db = db
 
 	return &repo, nil
-}
-
-func (r *Repository[T]) TargetType() string {
-	return repoName
 }
 
 // Update updates an existing entry in the BadgerDB based on the provided StoredAggregate.

@@ -6,13 +6,10 @@ spec:
   isPublic: true
   schemaName: Person
   schemaVersion: v0.0.1
-  target:
-    name: persistChef 
-    type: Badger
   handlers:
     - methods: ["GET", "PUT", "POST", "DELETE"]
       inbound:
-        - name: requestLogger
+        - name: RequestLogger
           type: RequestLogger
           precedence: 1
           executionType: async
@@ -45,6 +42,9 @@ spec:
                 value: "{{.Method}}"
               - name: path
                 value: "{{.URL.Path}}"
+      target:
+        name: persistChef
+        type: Noop
     - methods: ["GET"]
       inbound:
         - name: RequestLogger
@@ -73,3 +73,7 @@ spec:
                 value: "{{.Request.Method}}"
               - name: responseCode
                 value: "{{.Response.StatusCode}}"
+      target:
+        name: persistChef
+        type: Noop
+        

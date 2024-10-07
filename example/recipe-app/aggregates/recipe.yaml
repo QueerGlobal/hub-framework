@@ -6,9 +6,6 @@ spec:
   isPublic: true
   schemaName: Recipe
   schemaVersion: v0.0.2
-  target:
-    name: persistRecipe
-    type: Badger
   handlers:
     - methods: ["POST", "PUT", "DELETE"]
       inbound:
@@ -51,7 +48,9 @@ spec:
           enabled: True
           config:
             logAtLevel: INFO
-
+      target:
+        name: persistRecipe
+        type: Noop
     - methods: ["GET"]
       inbound:
         - name: RequestLogger
@@ -73,4 +72,7 @@ spec:
           enabled: True
           config:
             logAtLevel: INFO
+      target:
+        name: persistRecipe
+        type: Noop
 

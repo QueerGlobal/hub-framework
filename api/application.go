@@ -9,6 +9,7 @@ import (
 	"github.com/QueerGlobal/hub-framework/adapter/handler/requesthandler"
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/service/logging"
+	"github.com/QueerGlobal/hub-framework/service/target"
 	"github.com/QueerGlobal/hub-framework/service/task/builtin"
 	"github.com/rs/zerolog"
 )
@@ -82,6 +83,15 @@ func NewApplication(applicationName string, opts ...Option) *Application {
 	}
 
 	return &s
+}
+
+func (a *Application) registerBuiltinTargets() error {
+	// Register the LogWriter task type
+	noopTargetConstructor := entity.TargetConstructorFromFunction(target.NewNoop)
+	entity.RegisterTargetType("Noop", noopTargetConstructor)
+
+	// Register other built-in tasks here if needed
+	return nil
 }
 
 func (a *Application) registerBuiltinTasks() error {
@@ -168,6 +178,13 @@ func (a *Application) Start() error {
 	err = a.registerBuiltinTasks()
 	if err != nil {
 		err = fmt.Errorf("failed to register built-in tasks: %w", err)
+		log.Println(err)
+		return err
+	}
+
+	err = a.registerBuiltinTargets()
+	if err != nil {
+		err = fmt.Errorf("failed to register built-in targets: %w", err)
 		log.Println(err)
 		return err
 	}
