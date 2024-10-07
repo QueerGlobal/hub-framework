@@ -72,3 +72,11 @@ func GetTask(taskName string, config map[string]interface{}) (Task, error) {
 
 	return task, nil
 }
+
+// TaskConstructorFromFunction creates a TaskConstructorFunc from a function
+// with the signature func(map[string]interface{}) (T, error), where T implements Task
+func TaskConstructorFromFunction(
+	fn func(map[string]interface{}) (Task, error),
+) TaskConstructorFunc {
+	return TaskConstructorFunc(fn)
+}

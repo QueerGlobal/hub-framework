@@ -1,4 +1,4 @@
-package validation
+package builtin
 
 type RequestBodyValidator interface {
 }

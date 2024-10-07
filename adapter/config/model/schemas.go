@@ -16,8 +16,7 @@ type Schemas struct {
 type Schema struct {
 	Name     string `yaml:"name"`
 	Version  string `yaml:"version"`
-	File     string `yaml:"file,omitempty"`
-	FileName string `yaml:"filename,omitempty"`
+	FileName string `yaml:"fileName,omitempty"`
 }
 
 func UnmarshalSchemas(specYaml []byte) (*SchemasSpec, error) {

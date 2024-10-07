@@ -1,7 +1,7 @@
 apiVersion: v1
 specType: Aggregate
 spec:
-  name: chefs
+  name: chef
   apiName: recipeApp
   isPublic: true
   schemaName: Person
@@ -9,37 +9,46 @@ spec:
   handlers:
     - methods: ["GET", "PUT", "POST", "DELETE"]
       inbound:
-        - name: requestLogger
-          ref: builtin.RequestLogger
+        - name: RequestLogger
+          type: RequestLogger
           precedence: 1
           executionType: async
           config:
             logFilePath: "/var/log/my-servicename"
-        - name: internalTokenCreator
-          type: oryCookieToTokenTransformer
-          executionType: sync
-          precedence: 2
-          config:
-            ketoHome: "home"
       outbound:
         - name: ResponseBodyLogger
           description: "log response body"
           precedence: 1
-          type: LogWriter
+          type: ResponseLogger
           executionType: sync
           mustFinish: false
           onError: Ignore
           enabled: True
           config:
             logAtLevel: INFO
+            fields:
+              - name: responseBody
+                value: "{{.Response.Body}}"
         - name: ResponseCodeLogger
           type: LogWriter
           precedence: 32000 # use a large precedence value so that response code is logged after all other steps
-
+          enabled: true
+          config:
+            logAtLevel: INFO
+            fields:
+              - name: responseCode
+                value: "{{.Response.StatusCode}}"
+              - name: method
+                value: "{{.Method}}"
+              - name: path
+                value: "{{.URL.Path}}"
+      target:
+        name: persistChef
+        type: Noop
     - methods: ["GET"]
       inbound:
         - name: RequestLogger
-          type: LogWriter
+          type: RequestLogger
           precedence: 2
           executionType: sync
           mustFinish: true
@@ -50,12 +59,21 @@ spec:
       outbound:
         - name: ResponseCodeLogger
           type: LogWriter
-           precedence: 32000 # use a large precedence value so that response code is logged after all other steps
+          precedence: 32000 # use a large precedence value so that response code is logged after all other steps
           description: "log response code upon processing complete"
           executionType: sync
           onError: LogAndFail
-          enabled: True
+          enabled: true
           config:
             logAtLevel: INFO
-
-      
+            fields:
+              - name: path
+                value: "{{.Request.URL.Path}}"
+              - name: method
+                value: "{{.Request.Method}}"
+              - name: responseCode
+                value: "{{.Response.StatusCode}}"
+      target:
+        name: persistChef
+        type: Noop
+        

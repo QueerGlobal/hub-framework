@@ -5,8 +5,4 @@ spec:
   applicationVersion: "v0.0.1"
   publicPort: 8081
   privatePort: 8082
-  apis:
-    - name: recipes
-      aggregates:
-        - name: chef
-        - name: recipe
+  

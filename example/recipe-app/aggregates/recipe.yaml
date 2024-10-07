@@ -6,9 +6,6 @@ spec:
   isPublic: true
   schemaName: Recipe
   schemaVersion: v0.0.2
-  target:
-    name: persistRecipe
-    type: Badger
   handlers:
     - methods: ["POST", "PUT", "DELETE"]
       inbound:
@@ -51,7 +48,9 @@ spec:
           enabled: True
           config:
             logAtLevel: INFO
-
+      target:
+        name: persistRecipe
+        type: Noop
     - methods: ["GET"]
       inbound:
         - name: RequestLogger
@@ -66,11 +65,14 @@ spec:
       outbound:
         - name: ResponseCodeLogger
           type: LogWriter
-           precedence: 32000 # use a large precedence value so that response code is logged after all other steps
+          precedence: 32000 # use a large precedence value so that response code is logged after all other steps
           description: "log response code upon processing complete"
           executionType: sync
           onError: LogAndFail
           enabled: True
           config:
             logAtLevel: INFO
+      target:
+        name: persistRecipe
+        type: Noop
 

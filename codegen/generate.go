@@ -7,7 +7,7 @@ import (
 	"text/template"
 )
 
-func GenerateProject(appName string) {
+func GenerateNewProject(appName string) {
 	config := AppConfig{Name: appName}
 
 	// Create directories

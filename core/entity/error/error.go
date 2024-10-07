@@ -12,7 +12,7 @@ var ErrEmptyResponse error = errors.New("unexpected empty response from target")
 
 var ErrWorkflowTaskNotRegistered = errors.New("workflow task not registered")
 
-var ErrTargetNotRegistered = errors.New("workflow task not registered")
+var ErrTargetNotRegistered = errors.New("workflow target not registered")
 
 var ErrTargetNotConfigured = errors.New("no target configured for this service")
 

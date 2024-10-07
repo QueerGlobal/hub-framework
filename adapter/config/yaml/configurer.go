@@ -288,10 +288,10 @@ func (c *Configurer) applySchemasSpec(hub *entity.Hub, specs *map[string]*model.
 
 	for _, schemaSpec := range *specs {
 		for _, schema := range schemaSpec.Spec.Schemas {
-			filePath := filepath.Join(c.applicationDirectory, "schemas", schema.File)
+			filePath := filepath.Join(c.applicationDirectory, "schemas", schema.FileName)
 			schemaData, err := os.ReadFile(filePath)
 			if err != nil {
-				return fmt.Errorf("failed to read schema file %s: %w", schema.File, err)
+				return fmt.Errorf("failed to read schema file %s: %w", schema.FileName, err)
 			}
 
 			entity.RegisterSchema(schema.Name, schema.Version, schemaData)

@@ -3,12 +3,15 @@ package api
 import (
 	"fmt"
 	"log"
-	"os"
 	"sync"
 
 	"github.com/QueerGlobal/hub-framework/adapter/config/yaml"
 	"github.com/QueerGlobal/hub-framework/adapter/handler/requesthandler"
 	"github.com/QueerGlobal/hub-framework/core/entity"
+	"github.com/QueerGlobal/hub-framework/service/logging"
+	"github.com/QueerGlobal/hub-framework/service/target"
+	"github.com/QueerGlobal/hub-framework/service/task/builtin"
+	"github.com/QueerGlobal/hub-framework/service/task/remote"
 	"github.com/rs/zerolog"
 )
 
@@ -83,15 +86,41 @@ func NewApplication(applicationName string, opts ...Option) *Application {
 	return &s
 }
 
-func (a *Application) createLogger() *zerolog.Logger {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+func (a *Application) registerBuiltinTargets() error {
+	// Register the LogWriter task type
+	noopTargetConstructor := entity.TargetConstructorFromFunction(target.NewNoop)
+	entity.RegisterTargetType("Noop", noopTargetConstructor)
 
-	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
-
-	return &logger
+	// Register other built-in targets here if needed
+	return nil
 }
 
-func (a *Application) createHub(applicationName string, logger *zerolog.Logger) (Hub, error) {
+func (a *Application) registerBuiltinTaskTypes() error {
+	// Register the LogWriter task type
+	logWriterTaskConstructor := entity.TaskConstructorFromFunction(builtin.NewLogWriterTask)
+	entity.RegisterTaskType("LogWriter", logWriterTaskConstructor)
+
+	// Register the RequestLogger task type
+	requestLoggerTaskConstructor := entity.TaskConstructorFromFunction(builtin.NewRequestLoggerTask)
+	entity.RegisterTaskType("RequestLogger", requestLoggerTaskConstructor)
+
+	// Register the ResponseLogger task type
+	responseLoggerTaskConstructor := entity.TaskConstructorFromFunction(builtin.NewResponseLoggerTask)
+	entity.RegisterTaskType("ResponseLogger", responseLoggerTaskConstructor)
+
+	// Register the HttpForwardingService task type
+	remoteTaskConstructor := entity.TaskConstructorFromFunction(remote.NewForwardingService)
+	entity.RegisterTaskType("HttpService", remoteTaskConstructor)
+
+	// Register other built-in tasks here if needed
+
+	return nil
+}
+
+func (a *Application) createHub(applicationName string) (Hub, error) {
+	logging.SetLogLevel(a.LogLevel.ToZeroLogLevel())
+	logger := logging.GetLogger()
+
 	hub, err := entity.NewHub(logger, applicationName)
 	if err != nil {
 		logger.Err(err).Msgf("error initializing hub")
@@ -133,9 +162,8 @@ func (a *Application) startHub() error {
 }
 
 func (a *Application) Start() error {
-	logger := a.createLogger()
-
-	hub, err := a.createHub(a.ApplicationName, logger)
+	// create the hub
+	hub, err := a.createHub(a.ApplicationName)
 	if err != nil {
 		err = fmt.Errorf("failed to start hub service: %w", err)
 		log.Println(err)
@@ -144,12 +172,27 @@ func (a *Application) Start() error {
 
 	a.Hub = hub
 
+	err = a.registerBuiltinTaskTypes()
+	if err != nil {
+		err = fmt.Errorf("failed to register built-in tasks: %w", err)
+		log.Println(err)
+		return err
+	}
+
+	err = a.registerBuiltinTargets()
+	if err != nil {
+		err = fmt.Errorf("failed to register built-in targets: %w", err)
+		log.Println(err)
+		return err
+	}
+
 	configurer := yaml.NewConfigurer(a.ApplicationHome)
 
 	if hub == nil {
 		return fmt.Errorf("failed to create hub")
 	}
 
+	// configure based on the yaml files
 	err = configurer.ConfigureHub(hub.(*entity.Hub))
 	if err != nil {
 		err = fmt.Errorf("failed to configure hub: %w", err)
@@ -157,6 +200,7 @@ func (a *Application) Start() error {
 		return err
 	}
 
+	// start the hub
 	if err := a.startHub(); err != nil {
 		err = fmt.Errorf("failed to start hub service: %w", err)
 		log.Println(err)

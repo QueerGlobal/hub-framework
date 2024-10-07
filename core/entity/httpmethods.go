@@ -30,3 +30,7 @@ func StringToHTTPMethod(method string) (HTTPMethod, error) {
 		return "", domainerr.ErrUnsupportedHTTPMethod
 	}
 }
+
+func (m HTTPMethod) String() string {
+	return string(m)
+}
