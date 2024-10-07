@@ -2,11 +2,13 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/util"
@@ -15,49 +17,59 @@ import (
 type ForwardingService struct {
 	Host       string
 	PathPrefix string
+	name       string
 	backoff    *util.Backoff
 }
 
-type ForwardingServiceConfig struct {
-	Host          string
-	PathPrefix    string
-	BackoffConfig util.BackoffConfig
-}
-
-func NewForwardingService(config interface{}) ForwardingService {
+func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 	svc := ForwardingService{}
 
-	cfg := config.(ForwardingServiceConfig)
+	if host, ok := config["host"].(string); ok {
+		svc.Host = host
+	}
 
-	svc.Host = cfg.Host
+	if pathPrefix, ok := config["pathprefix"].(string); ok {
+		if len(pathPrefix) > 0 {
+			// Prepend "/" if it doesn't exist
+			if !strings.HasPrefix(pathPrefix, "/") {
+				pathPrefix = "/" + pathPrefix
+			}
 
-	pathPrefix := cfg.PathPrefix
-
-	if len(pathPrefix) > 0 {
-		// Prepend "/" if it doesn't exist
-		if !strings.HasPrefix(pathPrefix, "/") {
-			pathPrefix = "/" + pathPrefix
+			// Append "/" if it doesn't exist
+			if !strings.HasSuffix(pathPrefix, "/") {
+				pathPrefix = pathPrefix + "/"
+			}
 		}
 
-		// Append "/" if it doesn't exist
-		if !strings.HasSuffix(pathPrefix, "/") {
-			pathPrefix = pathPrefix + "/"
+		svc.PathPrefix = pathPrefix
+	}
+
+	var backoffConfig util.BackoffConfig
+	if backoff, ok := config["backoff"].(map[string]interface{}); ok {
+		if initialDelay, ok := backoff["initialDelay"].(float64); ok {
+			backoffConfig.InitialDelay = time.Duration(initialDelay) * time.Second
+		}
+		if maxDelay, ok := backoff["maxDelay"].(float64); ok {
+			backoffConfig.MaxDelay = time.Duration(maxDelay) * time.Second
+		}
+		if multiplier, ok := backoff["multiplier"].(float64); ok {
+			backoffConfig.Multiplier = multiplier
+		}
+		if maxRetries, ok := backoff["maxRetries"].(float64); ok {
+			backoffConfig.MaxRetries = int(maxRetries)
 		}
 	}
 
-	svc.PathPrefix = pathPrefix
-
-	backoff := util.NewBackoff(cfg.BackoffConfig)
+	backoff := util.NewBackoff(backoffConfig)
 	svc.backoff = backoff
 
-	return svc
+	return &svc, nil
 }
 
-func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.ServiceRequest, error) {
+func (fs *ForwardingService) Apply(ctx context.Context, request entity.ServiceRequest) error {
 	var serviceResponse entity.ServiceRequest
-	var err error
 
-	err = fs.backoff.ExecuteWithBackoff(func() error {
+	err := fs.backoff.ExecuteWithBackoff(func() error {
 		response, err := fs.forwardRequest(request)
 		if err != nil {
 			return err
@@ -73,13 +85,24 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 			return fmt.Errorf("error unmarshaling response: %s: %w", util.UnrecoverableErrorMsg, err)
 		}
 
+		responseObj, err := entity.GetResponseFromHttp(response)
+		if err != nil {
+			return fmt.Errorf("error getting response from http: %w", err)
+		}
+
+		request.SetResponse(responseObj)
+
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return serviceResponse, nil
+	return nil
+}
+
+func (fs *ForwardingService) Name() string {
+	return fs.name
 }
 
 func (fs *ForwardingService) forwardRequest(request entity.ServiceRequest) (*http.Response, error) {

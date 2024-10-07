@@ -5,7 +5,7 @@ spec:
   schemas:
     - name: Person
       version: v0.0.1
-      file: "{$project-root}/schemas/person-aggregate.schema.json"
+      fileName: "person-aggregate.schema.json"
     - name: Recipe
       version: v0.0.1
-      filename: "{$project-root}/schemas/recipe-aggregate.schema.json"
+      fileName: "recipe-aggregate.schema.json"
