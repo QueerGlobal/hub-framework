@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,10 +10,17 @@ import (
 	"strings"
 
 	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ServiceRequestInterface represents the interface for a standardized request structure.
 type ServiceRequest interface {
+	GetID() uuid.UUID
 	GetAPIName() string
 	GetServiceName() string
 	GetMethod() HTTPMethod
@@ -34,6 +42,7 @@ type ServiceRequest interface {
 	SetHeader(header http.Header)
 	GetTrailer() http.Header
 	SetTrailer(trailer http.Header)
+	InjectTraceFromContext(ctx context.Context)
 }
 
 // MultipartDataInterface represents the interface for multipart form data.
@@ -70,6 +79,7 @@ type RequestMetaInterface interface {
 
 // ServiceRequest represents a standardized request structure used within the service.
 type HTTPServiceRequest struct {
+	ID           uuid.UUID        // Unique identifier for the request
 	ApiName      string           // Name of the API being called
 	ServiceName  string           // Name of the specific service within the API
 	Method       HTTPMethod       // HTTP method of the request
@@ -103,6 +113,25 @@ type RequestMeta struct {
 	Host             string            // Requested host
 	RemoteAddr       string            // Remote address of the client
 	RequestURI       string            // Unmodified request-target of the Request-Line
+}
+
+// headerCarrier adapts http.Header to implement the TextMapCarrier interface
+type headerCarrier http.Header
+
+func (hc headerCarrier) Set(key, value string) {
+	http.Header(hc).Set(key, value)
+}
+
+func (hc headerCarrier) Get(key string) string {
+	return http.Header(hc).Get(key)
+}
+
+func (hc headerCarrier) Keys() []string {
+	keys := make([]string, 0, len(hc))
+	for k := range hc {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // GetEntityFromRequest unmarshals the request body into a given entity type.
@@ -322,6 +351,14 @@ func (sr *HTTPServiceRequest) SetTrailer(trailer http.Header) {
 	sr.Trailer = trailer
 }
 
+func (sr *HTTPServiceRequest) GetID() uuid.UUID {
+	return sr.ID
+}
+
+func (sr *HTTPServiceRequest) SetID(id uuid.UUID) {
+	sr.ID = id
+}
+
 // MultipartData methods
 
 func (md *MultipartData) GetValue() map[string][]string {
@@ -420,4 +457,38 @@ func (rm *RequestMeta) GetRequestURI() string {
 
 func (rm *RequestMeta) SetRequestURI(uri string) {
 	rm.RequestURI = uri
+}
+
+// InjectTrace injects OpenTelemetry trace information into the request headers.
+// It takes a context and updates the request's header with the trace context.
+func (r *HTTPServiceRequest) InjectTraceFromContext(ctx context.Context) {
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(r.Header))
+}
+
+// StartSpan starts a new span for the request and injects the trace context into the request headers.
+// It returns the new context with the span and the span itself.
+func (r *HTTPServiceRequest) StartSpan(ctx context.Context, spanName string) (context.Context, trace.Span) {
+	tracer := otel.Tracer("http-service-request")
+	ctx, span := tracer.Start(ctx, spanName)
+
+	// Set span attributes
+	span.SetAttributes(
+		attribute.String("request.id", r.ID.String()),
+		attribute.String("api.name", r.ApiName),
+		attribute.String("service.name", r.ServiceName),
+		attribute.String("http.method", string(r.Method)),
+		attribute.String("http.url", r.URL.String()),
+	)
+
+	// Inject the trace context into the request headers
+	r.InjectTraceFromContext(ctx)
+
+	return ctx, span
+}
+
+// EndSpan ends the span and injects the trace context into the request headers.
+func (r *HTTPServiceRequest) EndSpan(ctx context.Context, span trace.Span, status codes.Code, message string) {
+	r.InjectTraceFromContext(ctx)
+	span.SetStatus(status, message)
+	span.End()
 }
