@@ -2,8 +2,13 @@ package entity
 
 import (
 	"context"
+	"fmt"
 	"sort"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/exp/maps"
 )
 
@@ -51,18 +56,37 @@ func (chain *WorkflowTasks) Apply(
 	ctx context.Context,
 	in ServiceRequest) error {
 
+	tracer := otel.Tracer("workflow")
+	ctx, span := tracer.Start(ctx, "WorkflowTasks.Apply")
+	defer span.End()
+
 	keys := maps.Keys(chain.Steps)
 	sort.Ints(keys)
 
 	rqst := in
 	for _, key := range keys {
-
 		steps := chain.Steps[key]
 
 		for _, step := range steps {
-			if err := step.GetTask().Apply(ctx, rqst); err != nil {
+			stepCtx, stepSpan := tracer.Start(ctx, "workflow.step",
+				trace.WithAttributes(
+					attribute.Int("precedence", key),
+					attribute.String("step", step.Name),
+				))
+			rqst.InjectTraceFromContext(stepCtx)
+
+			err := step.GetTask().Apply(stepCtx, rqst)
+			if err != nil {
+				stepSpan.RecordError(err)
+				stepSpan.SetStatus(codes.Error, err.Error())
+				stepSpan.End()
+				rqst.InjectTraceFromContext(stepCtx)
 				return err
 			}
+
+			stepSpan.SetStatus(codes.Ok, fmt.Sprintf("Step '%s' completed successfully", step.Name))
+			stepSpan.End()
+			rqst.InjectTraceFromContext(stepCtx)
 		}
 	}
 	return nil

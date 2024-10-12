@@ -7,7 +7,12 @@ import (
 	"strings"
 
 	domainerr "github.com/QueerGlobal/hub-framework/core/entity/error"
+	"github.com/google/uuid"
 	zerolog "github.com/rs/zerolog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // Hub is the central entity in the system, responsible for managing services and routing HTTP requests.
@@ -75,21 +80,48 @@ func (hub *Hub) GetService(apiName string, serviceName string) (*Service, bool) 
 //   - A pointer to ServiceResponse and nil error on success.
 //   - nil and an error if request handling fails.
 func (hub *Hub) HandleRequest(r *http.Request) (ServiceResponse, error) {
+	// Initialize tracer
+	tracer := otel.Tracer(hub.ApplicationName)
+
+	// Extract context from headers
+	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+	// Start a new span
+	ctx, span := tracer.Start(ctx, "HandleRequest")
+	defer span.End()
+
 	request, err := GetRequestFromHttp(r)
 	if err != nil {
 		hub.logger.Err(err).Str("apiName", request.ApiName).
 			Str("serviceName", request.ServiceName).
 			Msg("failed to build service request")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to build service request")
 		return nil, err
 	}
 
-	response, err := hub.executeServiceRequest(r.Context(), request)
+	request.ID = uuid.New()
+
+	// Set span attributes
+	span.SetAttributes(
+		attribute.String("request.id", request.ID.String()),
+		attribute.String("api.name", request.ApiName),
+		attribute.String("service.name", request.ServiceName),
+	)
+
+	request.InjectTraceFromContext(ctx)
+
+	response, err := hub.executeServiceRequest(ctx, request)
 	if err != nil {
 		hub.logger.Err(err).Str("apiName", request.ApiName).
 			Str("serviceName", request.ServiceName).
 			Msg("failed to execute service request")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to execute service request")
 		return nil, err
 	}
+
+	span.SetStatus(codes.Ok, "request handled successfully")
 	return response, nil
 }
 
