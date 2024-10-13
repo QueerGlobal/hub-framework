@@ -73,20 +73,17 @@ func (chain *WorkflowTasks) Apply(
 					attribute.Int("precedence", key),
 					attribute.String("step", step.Name),
 				))
-			rqst.InjectTraceFromContext(stepCtx)
 
 			err := step.GetTask().Apply(stepCtx, rqst)
 			if err != nil {
 				stepSpan.RecordError(err)
 				stepSpan.SetStatus(codes.Error, err.Error())
 				stepSpan.End()
-				rqst.InjectTraceFromContext(stepCtx)
 				return err
 			}
 
 			stepSpan.SetStatus(codes.Ok, fmt.Sprintf("Step '%s' completed successfully", step.Name))
 			stepSpan.End()
-			rqst.InjectTraceFromContext(stepCtx)
 		}
 	}
 	return nil

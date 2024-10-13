@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Hub is the central entity in the system, responsible for managing services and routing HTTP requests.
@@ -107,9 +108,9 @@ func (hub *Hub) HandleRequest(r *http.Request) (ServiceResponse, error) {
 		attribute.String("request.id", request.ID.String()),
 		attribute.String("api.name", request.ApiName),
 		attribute.String("service.name", request.ServiceName),
+		attribute.String("http.method", string(r.Method)),
+		attribute.String("http.url", r.URL.String()),
 	)
-
-	request.InjectTraceFromContext(ctx)
 
 	response, err := hub.executeServiceRequest(ctx, request)
 	if err != nil {
@@ -136,6 +137,11 @@ func (hub *Hub) HandleRequest(r *http.Request) (ServiceResponse, error) {
 //   - A pointer to ServiceResponse and nil error on success.
 //   - A pointer to ServiceResponse with error details and an error on failure.
 func (hub *Hub) executeServiceRequest(ctx context.Context, request ServiceRequest) (ServiceResponse, error) {
+	span := trace.SpanFromContext(ctx)
+
+	ctx, localSpan := span.TracerProvider().Tracer(hub.ApplicationName).Start(ctx, request.GetServiceName())
+	defer localSpan.End()
+
 	response := &HttpServiceResponse{}
 	response.ResponseMeta = &HttpResponseMeta{}
 
@@ -144,12 +150,20 @@ func (hub *Hub) executeServiceRequest(ctx context.Context, request ServiceReques
 		err := fmt.Errorf("service %s not found %w", request.GetServiceName(), domainerr.ErrServiceNotFound)
 		hub.logger.Err(err).Str("apiName", request.GetAPIName()).Str("serviceName", request.GetServiceName()).Msg("service not found")
 		response.ResponseMeta.SetStatusCode(http.StatusNotFound)
+
+		localSpan.RecordError(err)
+		localSpan.SetStatus(codes.Error, "service not found")
+
 		return response, err
 	}
 
 	if err := service.DoRequest(ctx, request); err != nil {
 		hub.logger.Err(err).Str("apiName", request.GetAPIName()).Str("serviceName", request.GetServiceName()).Msg("failed to execute service request")
 		response.ResponseMeta.SetStatusCode(http.StatusInternalServerError)
+
+		localSpan.RecordError(err)
+		localSpan.SetStatus(codes.Error, "error executing service request")
+
 		return response, err
 	}
 

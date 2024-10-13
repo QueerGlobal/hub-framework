@@ -12,6 +12,8 @@ import (
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/util"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type ForwardingService struct {
@@ -70,7 +72,7 @@ func (fs *ForwardingService) Apply(ctx context.Context, request entity.ServiceRe
 	var serviceResponse entity.ServiceRequest
 
 	err := fs.backoff.ExecuteWithBackoff(func() error {
-		response, err := fs.forwardRequest(request)
+		response, err := fs.forwardRequest(ctx, request)
 		if err != nil {
 			return err
 		}
@@ -105,7 +107,7 @@ func (fs *ForwardingService) Name() string {
 	return fs.name
 }
 
-func (fs *ForwardingService) forwardRequest(request entity.ServiceRequest) (*http.Response, error) {
+func (fs *ForwardingService) forwardRequest(ctx context.Context, request entity.ServiceRequest) (*http.Response, error) {
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -124,6 +126,9 @@ func (fs *ForwardingService) forwardRequest(request entity.ServiceRequest) (*htt
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	// Inject the trace context into the request headers
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	// Perform the request
 	client := &http.Client{}
