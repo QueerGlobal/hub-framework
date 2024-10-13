@@ -108,6 +108,25 @@ type RequestMeta struct {
 	RequestURI       string            // Unmodified request-target of the Request-Line
 }
 
+// headerCarrier adapts http.Header to implement the TextMapCarrier interface
+type headerCarrier http.Header
+
+func (hc headerCarrier) Set(key, value string) {
+	http.Header(hc).Set(key, value)
+}
+
+func (hc headerCarrier) Get(key string) string {
+	return http.Header(hc).Get(key)
+}
+
+func (hc headerCarrier) Keys() []string {
+	keys := make([]string, 0, len(hc))
+	for k := range hc {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // GetEntityFromRequest unmarshals the request body into a given entity type.
 //
 // Parameters:
