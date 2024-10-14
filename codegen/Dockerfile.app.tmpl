@@ -1,0 +1,31 @@
+# Stage 1: Build the Go application
+FROM golang:1.19 AS builder
+
+WORKDIR /app
+
+# Copy the Go module files and download dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of the application code
+COPY . .
+
+# Build the application binary
+RUN go build -o {{.ApplicationName}}
+
+# Stage 2: Create the final image
+FROM alpine:latest
+
+WORKDIR /app
+
+# Copy the built application binary from the builder stage
+COPY --from=builder /app/{{.ApplicationName}} .
+
+# Expose application port
+EXPOSE {{.ApplicationPort}}
+
+# Set environment variables for OTLP exporter
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:{{.CollectorPort}}
+
+# Command to run the application
+CMD ["./myapp"]

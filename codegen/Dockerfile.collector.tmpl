@@ -1,0 +1,11 @@
+# Use the official OpenTelemetry Collector image
+FROM otel/opentelemetry-collector:latest
+
+# Copy the OpenTelemetry Collector configuration into the container
+COPY otel-collector-config.yaml /etc/otelcol/config.yaml
+
+# Expose OTLP port for receiving telemetry
+EXPOSE {{.CollectorPort}}
+
+# Command to start the OpenTelemetry Collector with the provided config
+CMD ["--config=/etc/otelcol/config.yaml"]

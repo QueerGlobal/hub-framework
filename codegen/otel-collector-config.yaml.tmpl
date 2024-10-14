@@ -1,0 +1,26 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: {{ .Values.otlp.grpc.endpoint | default ":4317" }}
+      http:
+        endpoint: {{ .Values.otlp.http.endpoint | default ":4318" }}
+
+processors:
+  batch:
+    timeout: {{ .Values.batch.timeout | default "5s" }}
+
+exporters:
+  logging:
+    logLevel: {{ .Values.logging.level | default "debug" }}
+
+  jaeger:
+    endpoint: {{ .Values.jaeger.endpoint | default "http://jaeger:14250" }}
+    insecure: {{ .Values.jaeger.insecure | default true }}
+
+service:
+  pipelines:
+    traces:
+      receivers: {{ .Values.pipelines.traces.receivers | default "[otlp]" }}
+      processors: {{ .Values.pipelines.traces.processors | default "[batch]" }}
+      exporters: {{ .Values.pipelines.traces.exporters | default "[jaeger, logging]" }}

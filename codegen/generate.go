@@ -7,9 +7,7 @@ import (
 	"text/template"
 )
 
-func GenerateNewProject(appName string) {
-	config := AppConfig{Name: appName}
-
+func GenerateNewProject(config map[string]interface{}) {
 	// Create directories
 	dirs := []string{"aggregates", "schemas"}
 	for _, dir := range dirs {
@@ -22,18 +20,19 @@ func GenerateNewProject(appName string) {
 
 	// Define file templates
 	files := map[string]string{
-		filepath.Join("aggregates", "example.yaml"):     aggregateYamlTemplate,
-		filepath.Join("schemas", "example.schema.json"): schemaJsonTemplate,
-		filepath.Join("schemas", "schemas.yaml"):        schemasYamlTemplate,
-		"hub.yaml":                                      hubYamlTemplate,
-		"main.go":                                       mainGoTemplate,
+		filepath.Join("aggregates", "example.yaml"):     "example.yaml.tmpl",
+		filepath.Join("schemas", "example.schema.json"): "example.schema.json.tmpl",
+		filepath.Join("schemas", "schemas.yaml"):        "schemas.yaml.tmpl",
+		"hub.yaml":                                      "hub.yaml.tmpl",
+		"main.go":                                       "main.go.tmpl",
 	}
 
 	// Create and populate files
-	for path, content := range files {
-		tmpl, err := template.New(filepath.Base(path)).Parse(content)
+	for path, templateFile := range files {
+		tmplPath := filepath.Join("codegen", templateFile)
+		tmpl, err := template.ParseFiles(tmplPath)
 		if err != nil {
-			fmt.Printf("Error parsing template for %s: %v\n", path, err)
+			fmt.Printf("Error parsing template file %s: %v\n", tmplPath, err)
 			return
 		}
 
@@ -51,5 +50,5 @@ func GenerateNewProject(appName string) {
 		}
 	}
 
-	fmt.Printf("Application %s generated successfully!\n", appName)
+	fmt.Printf("Application %s generated successfully!\n", config["ApplicationName"])
 }

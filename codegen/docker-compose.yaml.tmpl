@@ -1,0 +1,27 @@
+version: '3'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:{{.CollectorPort}}
+    ports:
+      - "8080:8080"  # application port
+    depends_on:
+      - collector
+    networks:
+      - otel_network
+
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    ports:
+      - "4317:{{.CollectorPort}}"  # port for receiving traces
+    networks:
+      - otel_network
+
+networks:
+  otel_network:
+    driver: bridge
