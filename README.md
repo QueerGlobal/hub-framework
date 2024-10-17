@@ -60,20 +60,24 @@ We believe that most interactions within a software system
 can be represented by CRUD (Create, Read, Update, Delete) operations 
 on a few key objects in the system, or aggregates. 
 
-In short, if you are building a system, that manges recipes, you should
-have a "thing" called a Recipe in your system. Everything that composes
+
+If you are building a system that manges recipes, for example, you should
+have something called a Recipe in your system. Everything that composes
 a recipe (ingredients, instructions, etc.) should be nested inside. And
 when you change the recipe, the general process should be that you find
 the recipe, update it, and save it. 
 
-We also know that there are often other things we want to do with our 
-data other than CRUD. FWe may need to check whether a user has a 
-subscription, save changes to the object to a search index, or notify
-other services of some change. 
 
-While extremely important, these additional operations do not need to be 
-part of the domain model, and are often the source of a lot of the comlexity
-in software projects. 
+There are often other things we want to do with our data other than CRUD. 
+but we can often separate those thing
+We may need to check whether a user is authenticated or has a subscription, 
+save updates to a search index, or notify other services of some change. 
+
+While extremely important, these additional operations do not usually need
+to be represented as part of our domain object (in this case, a "Recipe" does
+not need to know about the search index where it is registered.) And, including
+this ancillary data in our domain models is often the source of a lot unnecessary 
+complexity in software projects. 
 
 So instead of mashing them into our object-updating process, we separate 
 those concerns by applying them as a series of workflow operations 
