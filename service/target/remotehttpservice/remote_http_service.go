@@ -2,13 +2,15 @@ package remotehttpservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
+	"github.com/QueerGlobal/hub-framework/service/remoteforward"
 	"github.com/QueerGlobal/hub-framework/util"
 )
 
@@ -16,12 +18,14 @@ type ForwardingService struct {
 	Host       string
 	PathPrefix string
 	backoff    *util.Backoff
+	httpClient *http.Client
 }
 
 type ForwardingServiceConfig struct {
 	Host          string
 	PathPrefix    string
 	BackoffConfig util.BackoffConfig
+	ClientTimeout time.Duration
 }
 
 func NewForwardingService(config interface{}) ForwardingService {
@@ -49,6 +53,7 @@ func NewForwardingService(config interface{}) ForwardingService {
 
 	backoff := util.NewBackoff(cfg.BackoffConfig)
 	svc.backoff = backoff
+	svc.httpClient = remoteforward.NewHTTPClient(cfg.ClientTimeout)
 
 	return svc
 }
@@ -62,17 +67,13 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 		if err != nil {
 			return err
 		}
-		defer response.Body.Close()
 
-		body, err := io.ReadAll(response.Body)
+		parsed, err := remoteforward.ReadAndValidateResponse(response)
 		if err != nil {
-			return fmt.Errorf("%s: %w", util.UnrecoverableErrorMsg, err)
+			return err
 		}
 
-		if err := json.Unmarshal(body, &serviceResponse); err != nil {
-			return fmt.Errorf("error unmarshaling response: %s: %w", util.UnrecoverableErrorMsg, err)
-		}
-
+		serviceResponse = parsed
 		return nil
 	})
 	if err != nil {
@@ -93,18 +94,16 @@ func (fs *ForwardingService) forwardRequest(request entity.ServiceRequest) (*htt
 		requestPath = request.GetURL().Path
 	}
 
-	urlString := fs.Host + fs.PathPrefix + requestPath
+	urlString := remoteforward.JoinHostPrefixPath(fs.Host, fs.PathPrefix, requestPath)
 
-	req, err := http.NewRequest("POST", urlString, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, urlString, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// Perform the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := fs.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform HTTP request: %w", err)
 	}
