@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - 'infra/**'
-      - 'infra/opentofu/plan-encryption-fixture/**'
       - 'scripts/**'
       - '.github/workflows/infra.yml'
   push:
@@ -12,7 +11,6 @@ on:
       - main
     paths:
       - 'infra/**'
-      - 'infra/opentofu/plan-encryption-fixture/**'
       - 'scripts/**'
       - '.github/workflows/infra.yml'
 
@@ -74,6 +72,12 @@ jobs:
       - name: Plan file encryption test
         run: scripts/test/plan-encryption-test.sh
 
+      - name: Cloudflare preflight negative test
+        run: scripts/test/cloudflare-preflight-test.sh
+
+      - name: Bootstrap backend restore test
+        run: scripts/test/bootstrap-backend-restore-test.sh
+
       - name: Shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
@@ -83,7 +87,9 @@ jobs:
             scripts/lib/plan-files.sh \
             scripts/lib/bootstrap-backend-mode.sh \
             scripts/test/doppler-secrets-test.sh \
-            scripts/test/plan-encryption-test.sh
+            scripts/test/plan-encryption-test.sh \
+            scripts/test/cloudflare-preflight-test.sh \
+            scripts/test/bootstrap-backend-restore-test.sh
 
       - name: Doppler secrets helper test
         run: scripts/test/doppler-secrets-test.sh

@@ -3,3 +3,4 @@ backend-config.hcl
 *.tfstate
 *.tfstate.*
 *.tfplan
+ci-plan-leak.tfplan

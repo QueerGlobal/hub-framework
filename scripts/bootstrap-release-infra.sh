@@ -16,6 +16,11 @@ source "${ROOT}/scripts/lib/bootstrap-backend-mode.sh"
 install_plan_file_trap
 
 BOOTSTRAP_DIR="${ROOT}/infra/opentofu/state-bootstrap"
+bootstrap_exit_cleanup() {
+  cleanup_plan_files
+  bootstrap_versions_restore "${BOOTSTRAP_DIR}"
+}
+trap bootstrap_exit_cleanup EXIT
 RELEASE_DIR="${ROOT}/infra/opentofu/release-environment"
 DOPPLER_PROJECT="${DOPPLER_PROJECT:-hub-framework}"
 DOPPLER_CONFIG="${DOPPLER_CONFIG:-infra}"
@@ -45,7 +50,6 @@ require_cmd() {
 require_cmd tofu doppler curl jq openssl
 
 preflight_doppler_logged_in
-preflight_ensure_doppler_project_and_config "${DOPPLER_PROJECT}" "${DOPPLER_CONFIG}"
 
 if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
   echo "Set CLOUDFLARE_API_TOKEN (see infra/opentofu/state-bootstrap/README.md for required permissions)." >&2
@@ -54,11 +58,19 @@ fi
 
 export CLOUDFLARE_API_TOKEN
 
-ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-$(doppler secrets get CLOUDFLARE_ACCOUNT_ID --plain -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}" 2>/dev/null || true)}"
+ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-}"
+if [[ -z "${ACCOUNT_ID}" ]] && preflight_doppler_project_exists "${DOPPLER_PROJECT}"; then
+  ACCOUNT_ID="$(doppler secrets get CLOUDFLARE_ACCOUNT_ID --plain -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}" 2>/dev/null || true)"
+fi
 preflight_cloudflare_account_id "${ACCOUNT_ID}"
 
 preflight_cloudflare_api_token "${CLOUDFLARE_API_TOKEN}" "${ACCOUNT_ID}"
 
+if preflight_doppler_project_exists "${DOPPLER_PROJECT}"; then
+  preflight_doppler_secret_exists GITHUB_TOFU_RELEASE_ENV "${DOPPLER_PROJECT}" "${DOPPLER_CONFIG}"
+fi
+
+preflight_ensure_doppler_project_and_config "${DOPPLER_PROJECT}" "${DOPPLER_CONFIG}"
 preflight_doppler_secret_exists GITHUB_TOFU_RELEASE_ENV "${DOPPLER_PROJECT}" "${DOPPLER_CONFIG}"
 
 export TF_VAR_cloudflare_account_id="${ACCOUNT_ID}"
@@ -92,16 +104,11 @@ skip_requesting_account_id  = true
 EOF
 }
 
-bootstrap_backend_is_remote() {
-  [[ -f "${BOOTSTRAP_DIR}/.terraform/terraform.tfstate" ]] \
-    && grep -q '"type"[[:space:]]*:[[:space:]]*"s3"' "${BOOTSTRAP_DIR}/.terraform/terraform.tfstate"
-}
-
 bootstrap_init() {
   cd "${BOOTSTRAP_DIR}"
   if doppler secrets get TOFU_BOOTSTRAP_STATE_KEY --plain -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}" >/dev/null 2>&1 \
     && doppler secrets get TOFU_STATE_BUCKET --plain -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}" >/dev/null 2>&1; then
-    bootstrap_versions_use_s3 "${BOOTSTRAP_DIR}"
+    bootstrap_versions_with_s3_backend "${BOOTSTRAP_DIR}"
     doppler run -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}" -- bash -c "
       write_bootstrap_backend_config_from_env() {
         cat > \"${BOOTSTRAP_BACKEND_CONFIG}\" <<EOF
@@ -120,7 +127,6 @@ EOF
       tofu init -input=false -backend-config=\"${BOOTSTRAP_BACKEND_CONFIG}\" -reconfigure
     "
   else
-    bootstrap_versions_use_local "${BOOTSTRAP_DIR}"
     tofu init -input=false
   fi
 }
@@ -128,7 +134,7 @@ EOF
 migrate_bootstrap_state_to_r2() {
   local bucket=$1 endpoint=$2 access_key=$3 secret_key=$4
   cd "${BOOTSTRAP_DIR}"
-  if bootstrap_backend_is_remote; then
+  if bootstrap_backend_is_remote "${BOOTSTRAP_DIR}"; then
     echo "Bootstrap state already uses the R2 backend."
     return 0
   fi
@@ -157,7 +163,7 @@ migrate_bootstrap_state_to_r2() {
   export TF_VAR_bootstrap_state_encryption_passphrase
   TF_VAR_bootstrap_state_encryption_passphrase="$(doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE --plain -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}")"
 
-  bootstrap_versions_use_s3 "${BOOTSTRAP_DIR}"
+  bootstrap_versions_with_s3_backend "${BOOTSTRAP_DIR}"
   tofu init -input=false -migrate-state -backend-config="${BOOTSTRAP_BACKEND_CONFIG}" -reconfigure
   echo "Bootstrap state migrated to R2."
 }

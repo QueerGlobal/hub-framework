@@ -3,3 +3,5 @@ terraform.tfstate
 terraform.tfstate.*
 *.tfplan
 bootstrap-backend-config.hcl
+.bootstrap-versions.tf.snapshot
+ci-plan-leak.tfplan
