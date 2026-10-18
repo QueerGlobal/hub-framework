@@ -96,19 +96,19 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 		logger = logCfg
 	}
 
+	backoffConfig.TargetURL = svc.Host
+	if backoffConfig.Logger == nil {
+		backoffConfig.Logger = logger
+	}
 	backoff := util.NewBackoff(backoffConfig)
 	svc.backoff = backoff
 	svc.httpClient = remoteforward.NewHTTPClient(clientTimeout)
-	forwardCfg, err := remoteforward.NewForwardConfig(remoteforward.ForwardSettings{
+	svc.forward = remoteforward.NewForwardConfigResilient(remoteforward.ForwardSettings{
 		MaxResponseBodyBytes: maxResponseBodyBytes,
 		Logger:               logger,
 		Sentry:               sentrySettings,
 		UpstreamHost:         svc.Host,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("remote forward config: %w", err)
-	}
-	svc.forward = forwardCfg
 
 	return &svc, nil
 }

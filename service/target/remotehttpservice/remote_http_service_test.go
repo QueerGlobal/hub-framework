@@ -1,6 +1,7 @@
 package remotehttpservice
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
+	"github.com/QueerGlobal/hub-framework/service/remoteforward"
 	"github.com/QueerGlobal/hub-framework/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,8 +52,33 @@ func TestForwardingService_SuccessJSONResponse(t *testing.T) {
 	resp, err := svc.Apply(testRequest("/v1/resource"))
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+
+	encoded, err := json.Marshal(resp)
+	require.NoError(t, err)
+	assert.JSONEq(t, wantBody, string(encoded))
 	assert.Equal(t, http.StatusOK, resp.GetResponseMeta().GetStatusCode())
-	assert.JSONEq(t, wantBody, string(resp.GetBody()))
+}
+
+func TestNewForwardingService_InvalidSentryDSNStillWorks(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	svc := NewForwardingService(ForwardingServiceConfig{
+		Host:          ts.URL,
+		PathPrefix:    "api",
+		BackoffConfig: testBackoff(1),
+		ClientTimeout: time.Second,
+		Sentry:        remoteforward.SentryConfig{DSN: "not-a-valid-sentry-dsn"},
+	})
+
+	resp, err := svc.Apply(testRequest("/v1/resource"))
+	require.NoError(t, err)
+	encoded, err := json.Marshal(resp)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"ok":true}`, string(encoded))
 }
 
 func TestForwardingService_ServerErrorRetriesThenFails(t *testing.T) {
@@ -122,7 +149,8 @@ func TestForwardingService_NoDoubleSlashInForwardedPath(t *testing.T) {
 
 func TestForwardingService_ResponseBodyUnderLimit(t *testing.T) {
 	const limit int64 = 256
-	payload := strings.Repeat("x", int(limit-1))
+	payloadField := strings.Repeat("x", int(limit-20))
+	payload := `{"data":"` + payloadField + `"}`
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(payload))
@@ -139,7 +167,7 @@ func TestForwardingService_ResponseBodyUnderLimit(t *testing.T) {
 
 	resp, err := svc.Apply(testRequest("/v1/resource"))
 	require.NoError(t, err)
-	assert.Len(t, resp.GetBody(), int(limit-1))
+	assert.LessOrEqual(t, int64(len(resp.GetBody())), limit)
 }
 
 func TestForwardingService_ResponseBodyOverLimit(t *testing.T) {

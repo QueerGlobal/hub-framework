@@ -170,6 +170,34 @@ func TestSentryReporter_BodyLimitReportsTargetHostOnly(t *testing.T) {
 	assert.Equal(t, "upstream.example", event.Tags["target_host"])
 }
 
+func TestBuildForwardURL_InvalidHostNoCredentialLeak(t *testing.T) {
+	var logBuf bytes.Buffer
+	log := zerolog.New(&logBuf).With().Timestamp().Logger()
+	transport := &recordingTransport{}
+	reporter, shutdown, err := newSentryReporter(SentryConfig{DSN: "https://public@sentry.io/1"}, transport)
+	require.NoError(t, err)
+	defer shutdown()
+
+	cfg := ForwardConfig{
+		logger:   log,
+		reporter: reporter,
+	}
+
+	const host = "http://user:secret@%zz"
+	_, err = BuildForwardURL(host, "/api/", nil, cfg)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "secret")
+	assert.NotContains(t, err.Error(), "user:")
+	assert.NotContains(t, logBuf.String(), "secret")
+
+	events := transport.Events()
+	require.NotEmpty(t, events)
+	event := events[0]
+	require.NotEmpty(t, event.Exception)
+	assert.NotContains(t, event.Exception[0].Value, "secret")
+	assert.Equal(t, "build_forward_url", event.Tags["stage"])
+}
+
 func TestTargetHostTag_StripsCredentials(t *testing.T) {
 	assert.Equal(t, "upstream.example", TargetHostTag("http://user:pass@upstream.example/path?x=1"))
 }

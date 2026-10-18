@@ -32,7 +32,7 @@ func NewHTTPClient(timeout time.Duration) *http.Client {
 func BuildForwardURL(host, pathPrefix string, requestURL *url.URL, cfg ForwardConfig) (string, error) {
 	base, err := url.Parse(host)
 	if err != nil {
-		return "", cfg.failInvalidForwardURL(fmt.Errorf("invalid forward host %q: %w", redactedHostURL(host), err))
+		return "", cfg.failInvalidForwardURL(invalidForwardHostError(host))
 	}
 	if base.Scheme == "" || base.Host == "" {
 		return "", cfg.failInvalidForwardURL(fmt.Errorf("invalid forward host %q: scheme and host are required", redactedHostURL(host)))

@@ -182,6 +182,32 @@ func TestForwardingService_ResponseBodyOverLimit(t *testing.T) {
 	assert.Contains(t, err.Error(), "exceeds limit")
 }
 
+func TestNewForwardingService_InvalidSentryDSNStillWorks(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	task, err := NewForwardingService(map[string]interface{}{
+		"host":          ts.URL,
+		"pathprefix":    "api",
+		"clientTimeout": float64(1),
+		"sentry": map[string]interface{}{
+			"dsn": "not-a-valid-sentry-dsn",
+		},
+		"backoff": map[string]interface{}{
+			"initialDelay": float64(0.005),
+			"maxDelay":     float64(0.01),
+			"multiplier":   float64(1.0),
+			"maxRetries":   float64(1),
+		},
+	})
+	require.NoError(t, err)
+	req := testRequest("/v1/resource")
+	require.NoError(t, task.Apply(context.Background(), req))
+}
+
 func TestForwardingService_ClientTimeout(t *testing.T) {
 	var calls int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

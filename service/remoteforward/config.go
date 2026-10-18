@@ -1,6 +1,7 @@
 package remoteforward
 
 import (
+	"fmt"
 	"net/url"
 
 	"github.com/rs/zerolog"
@@ -23,6 +24,11 @@ type ForwardConfig struct {
 	shutdown             func()
 }
 
+// invalidForwardHostError returns a safe error when host cannot be parsed (never includes credentials or wrapped parse text).
+func invalidForwardHostError(host string) error {
+	return fmt.Errorf("invalid forward host %q", redactedHostURL(host))
+}
+
 // NewForwardConfig builds a ForwardConfig with default JSON stderr logging when Logger is nil.
 func NewForwardConfig(settings ForwardSettings) (ForwardConfig, error) {
 	logger := settings.Logger
@@ -43,6 +49,26 @@ func NewForwardConfig(settings ForwardSettings) (ForwardConfig, error) {
 		targetHostTag:        TargetHostTag(settings.UpstreamHost),
 		shutdown:             shutdown,
 	}, nil
+}
+
+// NewForwardConfigResilient returns ForwardConfig and logs a warning if Sentry initialization fails.
+func NewForwardConfigResilient(settings ForwardSettings) ForwardConfig {
+	cfg, err := NewForwardConfig(settings)
+	if err == nil {
+		return cfg
+	}
+	logger := settings.Logger
+	if logger == nil {
+		defaultLog := DefaultLogger()
+		logger = &defaultLog
+	}
+	logger.Warn().Err(err).Msg("Sentry init failed for remote forwarder; continuing without error reporting")
+	settings.Sentry = SentryConfig{}
+	cfg, err = NewForwardConfig(settings)
+	if err != nil {
+		panic(err)
+	}
+	return cfg
 }
 
 // Shutdown flushes pending Sentry events when a DSN-backed reporter is configured.

@@ -191,7 +191,7 @@ settings apply:
 | `sentry.dsn` | string | Sentry DSN; reporting is disabled when empty. |
 | `sentry.environment` | string | Sentry environment tag. |
 | `sentry.release` | string | Sentry release tag. |
-| `sentry.sampleRate` | float | Event sample rate (`0`–`1`); defaults to `1` when DSN is set. |
+| `sentry.sampleRate` | float | Event sample rate (`0`-`1`); defaults to `1` when DSN is set. |
 
 Call `Shutdown()` on the forwarder when the process exits so Sentry events are flushed.
 Invalid forward URLs and over-limit response bodies are logged and reported with

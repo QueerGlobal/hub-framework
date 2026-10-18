@@ -56,7 +56,12 @@ func NewForwardingService(config interface{}) ForwardingService {
 
 	svc.PathPrefix = pathPrefix
 
-	backoff := util.NewBackoff(cfg.BackoffConfig)
+	backoffConfig := cfg.BackoffConfig
+	backoffConfig.TargetURL = cfg.Host
+	if backoffConfig.Logger == nil {
+		backoffConfig.Logger = cfg.Logger
+	}
+	backoff := util.NewBackoff(backoffConfig)
 	svc.backoff = backoff
 	svc.httpClient = remoteforward.NewHTTPClient(cfg.ClientTimeout)
 	settings := remoteforward.ForwardSettings{
@@ -65,21 +70,7 @@ func NewForwardingService(config interface{}) ForwardingService {
 		Sentry:               cfg.Sentry,
 		UpstreamHost:         cfg.Host,
 	}
-	forwardCfg, err := remoteforward.NewForwardConfig(settings)
-	if err != nil {
-		logger := cfg.Logger
-		if logger == nil {
-			defaultLog := remoteforward.DefaultLogger()
-			logger = &defaultLog
-		}
-		logger.Error().Err(err).Msg("Sentry init failed for remote forwarder; continuing without error reporting")
-		settings.Sentry = remoteforward.SentryConfig{}
-		forwardCfg, err = remoteforward.NewForwardConfig(settings)
-		if err != nil {
-			panic(err)
-		}
-	}
-	svc.forward = forwardCfg
+	svc.forward = remoteforward.NewForwardConfigResilient(settings)
 
 	return svc
 }
@@ -104,7 +95,16 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 			return err
 		}
 
-		serviceResponse = parsed
+		var payload map[string]interface{}
+		if err := json.Unmarshal(parsed.GetBody(), &payload); err != nil {
+			return fmt.Errorf("error unmarshaling response: %s: %w", util.UnrecoverableErrorMsg, err)
+		}
+
+		serviceResponse = &forwardedJSONResponse{
+			meta: parsed.GetResponseMeta(),
+			data: payload,
+		}
+
 		return nil
 	})
 	if err != nil {
