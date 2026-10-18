@@ -248,7 +248,7 @@ Other key priorities include:
 
 Version tags and GitHub releases are created with the **Release** workflow (`.github/workflows/release.yml`), not by hand.
 
-The workflow runs in the GitHub Actions **release** environment (approval gate only). It does **not** use OpenTofu, Doppler, or R2 credentials—only `github.token` to push tags and create releases. **Before the first Release run**, a repository admin runs `./scripts/bootstrap-release-infra.sh` once to apply OpenTofu (R2 state bootstrap, then release-environment). See `infra/opentofu/release-environment/README.md`.
+The workflow runs in the GitHub Actions **release** environment (approval gate only). It does **not** use OpenTofu, Doppler, or R2 credentials; only `github.token` is used to push tags and create releases. **Before the first Release run**, a repository admin runs `./scripts/bootstrap-release-infra.sh` once to apply OpenTofu (R2 state bootstrap, then release-environment). See `infra/opentofu/release-environment/README.md`.
 
 To cut a release after the environment exists:
 
