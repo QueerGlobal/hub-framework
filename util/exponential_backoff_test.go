@@ -152,7 +152,8 @@ func TestCapDelay(t *testing.T) {
 		maxDelay time.Duration
 		want     time.Duration
 	}{
-		{name: "no cap when maxDelay zero", delay: 500 * time.Millisecond, maxDelay: 0, want: 500 * time.Millisecond},
+		{name: "default cap when maxDelay zero", delay: 10 * time.Minute, maxDelay: 0, want: DefaultUncappedMaxDelay},
+		{name: "under default cap when maxDelay zero", delay: 500 * time.Millisecond, maxDelay: 0, want: 500 * time.Millisecond},
 		{name: "no cap when maxDelay negative", delay: time.Second, maxDelay: -1, want: time.Second},
 		{name: "clamp when over cap", delay: 200 * time.Millisecond, maxDelay: 100 * time.Millisecond, want: 100 * time.Millisecond},
 		{name: "unchanged under cap", delay: 50 * time.Millisecond, maxDelay: 100 * time.Millisecond, want: 50 * time.Millisecond},
@@ -247,7 +248,7 @@ func TestExecuteWithBackoff_UncappedDelayDoesNotOverflow(t *testing.T) {
 	var sleeps []time.Duration
 	b.sleep = func(d time.Duration) {
 		require.GreaterOrEqual(t, int64(d), int64(0), "sleep delay must not be negative")
-		require.LessOrEqual(t, d, MaxBackoffDelay)
+		require.LessOrEqual(t, d, DefaultUncappedMaxDelay)
 		sleeps = append(sleeps, d)
 	}
 
@@ -258,7 +259,27 @@ func TestExecuteWithBackoff_UncappedDelayDoesNotOverflow(t *testing.T) {
 	for _, d := range sleeps {
 		require.GreaterOrEqual(t, int64(d), int64(0))
 	}
-	require.Equal(t, MaxBackoffDelay, sleeps[len(sleeps)-1])
+	require.Equal(t, DefaultUncappedMaxDelay, sleeps[len(sleeps)-1])
+}
+
+func TestExecuteWithBackoff_NegativeInitialDelayDoesNotSleepForever(t *testing.T) {
+	b := NewBackoff(BackoffConfig{
+		InitialDelay: -time.Second,
+		MaxDelay:     0,
+		Multiplier:   2,
+		MaxRetries:   2,
+	})
+
+	var sleeps []time.Duration
+	b.sleep = func(d time.Duration) {
+		require.GreaterOrEqual(t, int64(d), int64(0))
+		require.LessOrEqual(t, d, DefaultUncappedMaxDelay)
+		sleeps = append(sleeps, d)
+	}
+
+	err := b.ExecuteWithBackoff(func() error { return fmt.Errorf("fail") })
+	require.Error(t, err)
+	require.Len(t, sleeps, 1)
 }
 
 func TestExecuteWithBackoff_NoSleepAfterFinalAttempt(t *testing.T) {

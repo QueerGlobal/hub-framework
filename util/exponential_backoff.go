@@ -15,8 +15,11 @@ import (
 
 var UnrecoverableErrorMsg = "error is unrecoverable - backoff cancelled"
 
-// MaxBackoffDelay is the ceiling for computed retry delays (including when MaxDelay is unset).
+// MaxBackoffDelay is the hard ceiling for scaled retry delays (overflow protection).
 const MaxBackoffDelay = time.Duration(math.MaxInt64)
+
+// DefaultUncappedMaxDelay is the default cap when BackoffConfig.MaxDelay is unset.
+const DefaultUncappedMaxDelay = 5 * time.Minute
 
 type BackoffConfig struct {
 	InitialDelay time.Duration
@@ -54,20 +57,28 @@ func jitterForDelay(delay time.Duration) time.Duration {
 	return time.Duration(rand.Int63n(jitterRange))
 }
 
-// capDelay limits delay to maxDelay when maxDelay is positive; zero or negative maxDelay means no cap.
+// capDelay limits delay to maxDelay when maxDelay is positive; otherwise DefaultUncappedMaxDelay applies.
 func capDelay(delay, maxDelay time.Duration) time.Duration {
 	delay = clampDelayMagnitude(delay)
-	if maxDelay <= 0 {
-		return delay
-	}
-	if delay > maxDelay {
-		return maxDelay
+	limit := effectiveMaxDelay(maxDelay)
+	if delay > limit {
+		return limit
 	}
 	return delay
 }
 
+func effectiveMaxDelay(maxDelay time.Duration) time.Duration {
+	if maxDelay > 0 {
+		return maxDelay
+	}
+	return DefaultUncappedMaxDelay
+}
+
 func clampDelayMagnitude(delay time.Duration) time.Duration {
-	if delay < 0 || delay > MaxBackoffDelay {
+	if delay < 0 {
+		return 0
+	}
+	if delay > MaxBackoffDelay {
 		return MaxBackoffDelay
 	}
 	return delay
@@ -76,10 +87,8 @@ func clampDelayMagnitude(delay time.Duration) time.Duration {
 func addDelay(a, b time.Duration) time.Duration {
 	a = clampDelayMagnitude(a)
 	b = clampDelayMagnitude(b)
-	if a > MaxBackoffDelay-b {
-		return MaxBackoffDelay
-	}
-	return a + b
+	sum := a + b
+	return clampDelayMagnitude(sum)
 }
 
 func multiplyBackoffDelay(delay time.Duration, multiplier float64, maxDelay time.Duration) time.Duration {
