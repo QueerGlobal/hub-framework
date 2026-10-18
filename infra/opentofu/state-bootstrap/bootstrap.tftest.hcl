@@ -27,7 +27,7 @@ run "bootstrap_plan" {
   }
 
   variables {
-    cloudflare_account_id               = "00000000000000000000000000000000"
+    cloudflare_account_id                 = "00000000000000000000000000000000"
     bootstrap_state_encryption_passphrase = "mock-bootstrap-passphrase"
     state_bucket_name                     = "queerglobal-hub-framework-tofu-state"
   }

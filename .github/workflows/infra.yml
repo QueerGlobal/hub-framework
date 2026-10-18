@@ -1,0 +1,61 @@
+name: Infra
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+      - 'scripts/**'
+      - '.github/workflows/infra.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+      - 'scripts/**'
+      - '.github/workflows/infra.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  opentofu-and-shell:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install OpenTofu
+        run: |
+          curl -fsSL -o /tmp/tofu.zip "https://github.com/opentofu/opentofu/releases/download/v1.10.6/tofu_1.10.6_linux_amd64.zip"
+          unzip -p /tmp/tofu.zip tofu | sudo tee /usr/local/bin/tofu >/dev/null
+          sudo chmod +x /usr/local/bin/tofu
+          tofu version
+
+      - name: OpenTofu fmt check
+        run: tofu fmt -check -recursive infra/opentofu
+
+      - name: OpenTofu validate and test (state-bootstrap)
+        env:
+          TF_VAR_bootstrap_state_encryption_passphrase: mock-bootstrap-passphrase-16
+          TF_VAR_cloudflare_account_id: "00000000000000000000000000000001"
+        working-directory: infra/opentofu/state-bootstrap
+        run: |
+          tofu init -backend=false
+          tofu validate
+          tofu test
+
+      - name: OpenTofu validate (release-environment)
+        env:
+          TF_VAR_state_encryption_passphrase: mock-release-passphrase-16
+        working-directory: infra/opentofu/release-environment
+        run: |
+          tofu init -backend=false
+          tofu validate
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck scripts/bootstrap-release-infra.sh scripts/lib/doppler-secrets.sh scripts/test/doppler-secrets-test.sh
+
+      - name: Doppler secrets helper test
+        run: scripts/test/doppler-secrets-test.sh
