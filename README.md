@@ -248,17 +248,7 @@ Other key priorities include:
 
 Version tags and GitHub releases are created with the **Release** workflow (`.github/workflows/release.yml`), not by hand.
 
-The workflow runs in the GitHub Actions **release** environment. **Before the first Release run**, a repository admin must apply the OpenTofu stack once (reviewers, `main`-only deployment policy, encrypted remote state):
-
-```bash
-cd infra/opentofu/release-environment
-# Configure S3 backend (backend-config.hcl) and secrets — see stack README
-tofu init -backend-config=backend-config.hcl
-tofu plan
-tofu apply
-```
-
-See `infra/opentofu/release-environment/README.md` for the Doppler token source, backend config, and variables.
+The workflow runs in the GitHub Actions **release** environment. **Before the first Release run**, a repository admin runs `./scripts/bootstrap-release-infra.sh` once (R2 state bootstrap, Doppler backend config, then release-environment apply). See `infra/opentofu/release-environment/README.md`.
 
 To cut a release after the environment exists:
 

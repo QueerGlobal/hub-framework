@@ -32,6 +32,10 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 		svc.Host = host
 	}
 
+	if name, ok := config["name"].(string); ok {
+		svc.name = name
+	}
+
 	if pathPrefix, ok := config["pathprefix"].(string); ok {
 		svc.PathPrefix = remoteforward.NormalizePathPrefix(pathPrefix)
 	}
