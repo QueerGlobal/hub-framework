@@ -26,8 +26,6 @@ export DOPPLER_PROJECT=hub-framework
 export DOPPLER_CONFIG=bootstrap-admin
 
 PASS_A='rotation-test-passphrase-a16'
-PASS_B='rotation-test-passphrase-b16'
-PASS_C='rotation-test-passphrase-c16'
 
 rotation_doppler_seed "${DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE hub-framework bootstrap-admin "${PASS_A}"
 
