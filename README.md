@@ -220,6 +220,21 @@ Other key priorities include:
     - Distributed Metrics
     
 
+## Releases
+
+Version tags and GitHub releases are created with the **Release** workflow (`.github/workflows/release.yml`), not by hand.
+
+The workflow runs in the GitHub Actions **release** environment (approval gate only). It does **not** use OpenTofu, Doppler, or R2 credentials; only `github.token` is used to push tags and create releases. **Before the first Release run**, a repository admin runs `./scripts/bootstrap-release-infra.sh` once to apply OpenTofu (R2 state bootstrap, then release-environment). See `infra/opentofu/release-environment/README.md`.
+
+To cut a release after the environment exists:
+
+1. Open the **Actions** tab, choose **Release**, then **Run workflow** on the branch you want to tag (usually `main`).
+2. Enter a semver tag such as `v1.2.3`.
+3. Approve the deployment if your account is a configured reviewer.
+4. The workflow validates the tag name, then runs `scripts/release-gate.sh`. The gate stops the run unless every check on the commit passed (the Go `test` check is required) and the **release** environment requires a reviewer. It then creates an annotated Git tag, pushes it, and opens a GitHub release with generated release notes.
+
+The release job is the only job that requests `contents: write`; other workflows stay read-only.
+
 ## Contributing
 
 Please see our orgnazations documentation page [here](https://github.com/QueerGlobal/qg-docs) for more information on us and on how to contribute to this project. 

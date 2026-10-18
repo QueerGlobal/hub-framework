@@ -30,6 +30,10 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 		svc.Host = host
 	}
 
+	if name, ok := config["name"].(string); ok {
+		svc.name = name
+	}
+
 	if pathPrefix, ok := config["pathprefix"].(string); ok {
 		if len(pathPrefix) > 0 {
 			// Prepend "/" if it doesn't exist
