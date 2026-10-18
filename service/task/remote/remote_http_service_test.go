@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,6 +42,24 @@ func (t *recordingSentryTransport) Events() []*sentry.Event {
 	out := make([]*sentry.Event, len(t.events))
 	copy(out, t.events)
 	return out
+}
+
+func assertNoForwardURLSecrets(t *testing.T, parts ...string) {
+	t.Helper()
+	for _, part := range parts {
+		assert.NotContains(t, part, "SECRET123")
+		assert.NotContains(t, part, "secret-path")
+		assert.NotContains(t, part, "forwarduser")
+		assert.NotContains(t, part, "forwardpass")
+	}
+}
+
+func assertSentryEventRedacted(t *testing.T, event *sentry.Event) {
+	t.Helper()
+	require.NotEmpty(t, event.Exception)
+	for _, exc := range event.Exception {
+		assertNoForwardURLSecrets(t, exc.Value)
+	}
 }
 
 func testBackoff(maxRetries int) util.BackoffConfig {
@@ -99,9 +118,9 @@ func TestForwardingService_SuccessJSONResponse(t *testing.T) {
 }
 
 func TestForwardingService_ServerErrorRetriesThenFails(t *testing.T) {
-	var calls int
+	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`<html>error</html>`))
 	}))
@@ -112,14 +131,14 @@ func TestForwardingService_ServerErrorRetriesThenFails(t *testing.T) {
 
 	err := task.Apply(context.Background(), req)
 	require.Error(t, err)
-	assert.Equal(t, 2, calls)
+	assert.Equal(t, int32(2), calls.Load())
 	assert.NotContains(t, err.Error(), util.UnrecoverableErrorMsg)
 }
 
 func TestForwardingService_ClientErrorNoRetry(t *testing.T) {
-	var calls int
+	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`not found`))
 	}))
@@ -130,7 +149,7 @@ func TestForwardingService_ClientErrorNoRetry(t *testing.T) {
 
 	err := task.Apply(context.Background(), req)
 	require.Error(t, err)
-	assert.Equal(t, 1, calls)
+	assert.Equal(t, int32(1), calls.Load())
 	assert.Contains(t, err.Error(), util.UnrecoverableErrorMsg)
 }
 
@@ -278,19 +297,11 @@ func TestForwardingService_NetworkTimeoutRedactsURLInErrorLogsAndSentry(t *testi
 	err = task.Apply(context.Background(), req)
 	require.Error(t, err)
 
-	for _, part := range []string{err.Error(), logBuf.String()} {
-		assert.NotContains(t, part, "SECRET123")
-		assert.NotContains(t, part, "secret-path")
-		assert.NotContains(t, part, "forwarduser")
-	}
+	assertNoForwardURLSecrets(t, err.Error(), logBuf.String())
 
 	events := transport.Events()
 	require.NotEmpty(t, events)
-	require.NotEmpty(t, events[len(events)-1].Exception)
-	exc := events[len(events)-1].Exception[0].Value
-	assert.NotContains(t, exc, "SECRET123")
-	assert.NotContains(t, exc, "secret-path")
-	assert.NotContains(t, exc, "forwarduser")
+	assertSentryEventRedacted(t, events[len(events)-1])
 }
 
 func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *testing.T) {
@@ -325,21 +336,17 @@ func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *te
 	err = task.Apply(context.Background(), req)
 	require.Error(t, err)
 
-	for _, part := range []string{err.Error(), logBuf.String()} {
-		assert.NotContains(t, part, "SECRET123")
-		assert.NotContains(t, part, "secret-path")
-		assert.NotContains(t, part, "forwarduser")
-	}
+	assertNoForwardURLSecrets(t, err.Error(), logBuf.String())
 
 	events := transport.Events()
 	require.NotEmpty(t, events)
-	assert.NotContains(t, events[0].Exception[0].Value, "SECRET123")
+	assertSentryEventRedacted(t, events[0])
 }
 
 func TestForwardingService_ClientTimeout(t *testing.T) {
-	var calls int
+	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		time.Sleep(200 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{}`))
@@ -351,5 +358,5 @@ func TestForwardingService_ClientTimeout(t *testing.T) {
 
 	err := task.Apply(context.Background(), req)
 	require.Error(t, err)
-	assert.Equal(t, 2, calls)
+	assert.Equal(t, int32(2), calls.Load())
 }

@@ -136,7 +136,7 @@ func TestSentryReporter_InvalidForwardURLNoSecretsOrQuery(t *testing.T) {
 	events := transport.Events()
 	require.NotEmpty(t, events)
 	event := events[0]
-	assert.Equal(t, "upstream.example", event.Tags["target_host"])
+	assert.Equal(t, "upstream.example:8080", event.Tags["target_host"])
 	assert.Equal(t, "build_forward_url", event.Tags["stage"])
 	require.NotEmpty(t, event.Exception)
 	assert.NotContains(t, event.Exception[0].Value, "token=leaked")
@@ -200,4 +200,5 @@ func TestBuildForwardURL_InvalidHostNoCredentialLeak(t *testing.T) {
 
 func TestTargetHostTag_StripsCredentials(t *testing.T) {
 	assert.Equal(t, "upstream.example", TargetHostTag("http://user:pass@upstream.example/path?x=1"))
+	assert.Equal(t, "[::1]:8080", TargetHostTag("http://user:pass@[::1]:8080/path?x=1"))
 }

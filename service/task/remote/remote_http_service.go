@@ -139,9 +139,8 @@ func (fs *ForwardingService) Apply(ctx context.Context, request entity.ServiceRe
 		return nil
 	})
 	if err != nil {
-		redacted := util.RedactURLError(err)
-		fs.forward.ReportHTTPFailure(redacted)
-		return redacted
+		fs.forward.ReportHTTPFailure(err)
+		return util.RedactURLError(err)
 	}
 
 	return nil

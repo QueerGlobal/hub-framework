@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,6 +54,15 @@ func assertNoForwardURLSecrets(t *testing.T, parts ...string) {
 		assert.NotContains(t, part, "SECRET123")
 		assert.NotContains(t, part, "secret-path")
 		assert.NotContains(t, part, "forwarduser")
+		assert.NotContains(t, part, "forwardpass")
+	}
+}
+
+func assertSentryEventRedacted(t *testing.T, event *sentry.Event) {
+	t.Helper()
+	require.NotEmpty(t, event.Exception)
+	for _, exc := range event.Exception {
+		assertNoForwardURLSecrets(t, exc.Value)
 	}
 }
 
@@ -134,9 +144,9 @@ func TestNewForwardingService_InvalidSentryDSNStillWorks(t *testing.T) {
 }
 
 func TestForwardingService_ServerErrorRetriesThenFails(t *testing.T) {
-	var calls int
+	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":"boom"}`))
 	}))
@@ -151,14 +161,14 @@ func TestForwardingService_ServerErrorRetriesThenFails(t *testing.T) {
 
 	_, err := svc.Apply(testRequest("/v1/resource"))
 	require.Error(t, err)
-	assert.Equal(t, 2, calls)
+	assert.Equal(t, int32(2), calls.Load())
 	assert.NotContains(t, err.Error(), util.UnrecoverableErrorMsg)
 }
 
 func TestForwardingService_ClientErrorNoRetry(t *testing.T) {
-	var calls int
+	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"error":"bad input"}`))
 	}))
@@ -173,7 +183,7 @@ func TestForwardingService_ClientErrorNoRetry(t *testing.T) {
 
 	_, err := svc.Apply(testRequest("/v1/resource"))
 	require.Error(t, err)
-	assert.Equal(t, 1, calls)
+	assert.Equal(t, int32(1), calls.Load())
 	assert.Contains(t, err.Error(), util.UnrecoverableErrorMsg)
 }
 
@@ -284,9 +294,7 @@ func TestForwardingService_NetworkTimeoutRedactsURLInErrorLogsAndSentry(t *testi
 
 	events := transport.Events()
 	require.NotEmpty(t, events)
-	require.NotEmpty(t, events[len(events)-1].Exception)
-	sentryText := events[len(events)-1].Exception[0].Value
-	assertNoForwardURLSecrets(t, sentryText)
+	assertSentryEventRedacted(t, events[len(events)-1])
 	assert.Equal(t, "http_request", events[len(events)-1].Tags["stage"])
 }
 
@@ -320,14 +328,13 @@ func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *te
 
 	events := transport.Events()
 	require.NotEmpty(t, events)
-	require.NotEmpty(t, events[0].Exception)
-	assertNoForwardURLSecrets(t, events[0].Exception[0].Value)
+	assertSentryEventRedacted(t, events[0])
 }
 
 func TestForwardingService_ClientTimeout(t *testing.T) {
-	var calls int
+	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		time.Sleep(200 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{}`))
@@ -343,5 +350,5 @@ func TestForwardingService_ClientTimeout(t *testing.T) {
 
 	_, err := svc.Apply(testRequest("/v1/resource"))
 	require.Error(t, err)
-	assert.Equal(t, 2, calls)
+	assert.Equal(t, int32(2), calls.Load())
 }

@@ -78,3 +78,35 @@ func TestRedactedURLFromRaw_SchemelessHost(t *testing.T) {
 	got := redactedURLFromRaw("//example.com/path?x=1")
 	assert.Equal(t, "http://example.com", got)
 }
+
+func TestRedactedURLFromRaw_KeepsPort(t *testing.T) {
+	got := redactedURLFromRaw("http://user:pass@upstream.example:8080/secret?token=SECRET")
+	assert.Equal(t, "http://upstream.example:8080", got)
+	assert.NotContains(t, got, "user")
+}
+
+func TestRedactedURLFromRaw_KeepsIPv6Port(t *testing.T) {
+	got := redactedURLFromRaw("http://user:pass@[::1]:8080/secret?token=SECRET")
+	assert.Equal(t, "http://[::1]:8080", got)
+}
+
+func TestRedactURLError_ErrorsJoin(t *testing.T) {
+	urlErr := &url.Error{
+		Op:  "Get",
+		URL: "http://user:pass@upstream.example/secret-path?token=SECRET123",
+		Err: context.DeadlineExceeded,
+	}
+	joined := errors.Join(fmt.Errorf("wrapper"), urlErr)
+	redacted := RedactURLError(joined)
+	require.NotNil(t, redacted)
+	out := redacted.Error()
+	assert.NotContains(t, out, "SECRET123")
+	assert.NotContains(t, out, "secret-path")
+	assert.NotContains(t, out, "user")
+	assert.True(t, errors.Is(redacted, context.DeadlineExceeded))
+}
+
+func TestTargetHostTag_KeepsPortAndIPv6(t *testing.T) {
+	assert.Equal(t, "upstream.example:8080", TargetHostTag("http://user:pass@upstream.example:8080/path?q=1"))
+	assert.Equal(t, "[::1]:8080", TargetHostTag("http://user:pass@[::1]:8080/path"))
+}

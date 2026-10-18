@@ -191,11 +191,15 @@ settings apply:
 | `sentry.dsn` | string | Sentry DSN; reporting is disabled when empty. |
 | `sentry.environment` | string | Sentry environment tag. |
 | `sentry.release` | string | Sentry release tag. |
-| `sentry.sampleRate` | float | Event sample rate (`0`-`1`); defaults to `1` when DSN is set. |
+| `sentry.sampleRate` | float | Event sample rate (`0`-`1`); when the DSN is set, `0` or a negative value is treated as `1` (report all events). |
 
 Call `Shutdown()` on the forwarder when the process exits so Sentry events are flushed.
-Invalid forward URLs and over-limit response bodies are logged and reported with
-`target_host` tags only (never query strings or credentials).
+Invalid forward URLs, over-limit response bodies, and network-level forward failures
+(timeouts, connection refused, and similar) are logged and reported to Sentry when a
+DSN is configured. Events use `stage` and `target_host` tags only; `target_host` is
+the upstream host (including port or IPv6 brackets) with no userinfo, path, or query.
+Error messages sent to logs and Sentry redact forwarded URL paths, query strings, and
+credentials.
 
 ## Roadmap
 

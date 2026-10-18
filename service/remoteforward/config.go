@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/QueerGlobal/hub-framework/util"
 	"github.com/rs/zerolog"
 )
 
@@ -93,7 +94,7 @@ func (c ForwardConfig) reportError(err error, stage string) {
 	if c.targetHostTag != "" {
 		tags["target_host"] = c.targetHostTag
 	}
-	c.reporter.ReportError(err, tags)
+	c.reporter.ReportError(util.RedactURLError(err), tags)
 }
 
 // ReportHTTPFailure sends a redacted forward HTTP failure to the configured error reporter.
@@ -109,20 +110,20 @@ func (c ForwardConfig) logInvalidForwardURL(reason string) {
 	c.logger.Warn().Str("reason", reason).Str("target_host", c.targetHostTag).Msg("invalid remote forward URL")
 }
 
-// TargetHostTag returns the upstream hostname for monitoring tags (no credentials, path, or query).
+// TargetHostTag returns the upstream host for monitoring tags (host:port or [ipv6]:port; no userinfo, path, or query).
 func TargetHostTag(hostURL string) string {
 	parsed, err := url.Parse(hostURL)
 	if err != nil || parsed.Host == "" {
 		return ""
 	}
-	return parsed.Hostname()
+	return parsed.Host
 }
 
-// redactedHostURL returns scheme and hostname for error messages (no userinfo, path, or query).
+// redactedHostURL returns scheme and host for error messages (no userinfo, path, or query).
 func redactedHostURL(hostURL string) string {
 	parsed, err := url.Parse(hostURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "<invalid-host>"
 	}
-	return parsed.Scheme + "://" + parsed.Hostname()
+	return parsed.Scheme + "://" + parsed.Host
 }

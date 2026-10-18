@@ -108,9 +108,8 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 		return nil
 	})
 	if err != nil {
-		redacted := util.RedactURLError(err)
-		fs.forward.ReportHTTPFailure(redacted)
-		return nil, redacted
+		fs.forward.ReportHTTPFailure(err)
+		return nil, util.RedactURLError(err)
 	}
 
 	return serviceResponse, nil

@@ -231,6 +231,7 @@ func TestExecuteWithBackoff_LogsTargetHostRedacted(t *testing.T) {
 
 func TestTargetHostTag_StripsCredentialsAndQuery(t *testing.T) {
 	assert.Equal(t, "upstream.example", TargetHostTag("http://user:pass@upstream.example/path?q=1"))
+	assert.Equal(t, "upstream.example:9090", TargetHostTag("http://user:pass@upstream.example:9090/path?q=1"))
 }
 
 func TestExecuteWithBackoff_UncappedDelayDoesNotOverflow(t *testing.T) {
