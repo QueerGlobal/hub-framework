@@ -82,7 +82,6 @@ jobs:
             scripts/lib/preflight.sh \
             scripts/lib/plan-files.sh \
             scripts/lib/bootstrap-backend-mode.sh \
-            scripts/lib/preflight.sh \
             scripts/test/doppler-secrets-test.sh \
             scripts/test/plan-encryption-test.sh
 
