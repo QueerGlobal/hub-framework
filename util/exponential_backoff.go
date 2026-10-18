@@ -123,7 +123,7 @@ func (b *Backoff) logger() *zerolog.Logger {
 	return &log
 }
 
-// TargetHostTag returns the hostname from a URL for logging (no credentials, path, or query).
+// TargetHostTag returns the host from a URL for logging (host:port or [ipv6]:port; no userinfo, path, or query).
 func TargetHostTag(rawURL string) string {
 	if rawURL == "" {
 		return ""
@@ -132,7 +132,7 @@ func TargetHostTag(rawURL string) string {
 	if err != nil || parsed.Host == "" {
 		return ""
 	}
-	return parsed.Hostname()
+	return parsed.Host
 }
 
 func (b *Backoff) logRetry(attempt int, err error, sleepDelay time.Duration) {
