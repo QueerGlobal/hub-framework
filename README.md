@@ -220,6 +220,16 @@ Other key priorities include:
     - Distributed Metrics
     
 
+## Releases
+
+Version tags and GitHub releases are created with the **Release** workflow (`.github/workflows/release.yml`), not by hand.
+
+1. Open **Actions → Release → Run workflow** on the branch you want to tag (usually `main`).
+2. Enter a semver tag such as `v1.2.3`.
+3. The workflow validates the tag name, creates an annotated Git tag, pushes it, and opens a GitHub release with generated release notes.
+
+The release job is the only job that requests `contents: write`; other workflows stay read-only.
+
 ## Contributing
 
 Please see our orgnazations documentation page [here](https://github.com/QueerGlobal/qg-docs) for more information on us and on how to contribute to this project. 

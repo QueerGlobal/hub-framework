@@ -233,6 +233,34 @@ func TestTargetHostTag_StripsCredentialsAndQuery(t *testing.T) {
 	assert.Equal(t, "upstream.example", TargetHostTag("http://user:pass@upstream.example/path?q=1"))
 }
 
+func TestExecuteWithBackoff_UncappedDelayDoesNotOverflow(t *testing.T) {
+	rand.Seed(7)
+
+	const initial = time.Second
+	b := NewBackoff(BackoffConfig{
+		InitialDelay: initial,
+		MaxDelay:     0,
+		Multiplier:   2,
+		MaxRetries:   40,
+	})
+
+	var sleeps []time.Duration
+	b.sleep = func(d time.Duration) {
+		require.GreaterOrEqual(t, int64(d), int64(0), "sleep delay must not be negative")
+		require.LessOrEqual(t, d, MaxBackoffDelay)
+		sleeps = append(sleeps, d)
+	}
+
+	err := b.ExecuteWithBackoff(func() error { return fmt.Errorf("fail") })
+	require.Error(t, err)
+	require.Len(t, sleeps, 39)
+
+	for _, d := range sleeps {
+		require.GreaterOrEqual(t, int64(d), int64(0))
+	}
+	require.Equal(t, MaxBackoffDelay, sleeps[len(sleeps)-1])
+}
+
 func TestExecuteWithBackoff_NoSleepAfterFinalAttempt(t *testing.T) {
 	b := NewBackoff(BackoffConfig{
 		InitialDelay: time.Millisecond,

@@ -1,6 +1,7 @@
 package util
 
 import (
+	"math"
 	"math/rand"
 	"net/url"
 	"os"
@@ -13,6 +14,9 @@ import (
 )
 
 var UnrecoverableErrorMsg = "error is unrecoverable - backoff cancelled"
+
+// MaxBackoffDelay is the ceiling for computed retry delays (including when MaxDelay is unset).
+const MaxBackoffDelay = time.Duration(math.MaxInt64)
 
 type BackoffConfig struct {
 	InitialDelay time.Duration
@@ -52,6 +56,7 @@ func jitterForDelay(delay time.Duration) time.Duration {
 
 // capDelay limits delay to maxDelay when maxDelay is positive; zero or negative maxDelay means no cap.
 func capDelay(delay, maxDelay time.Duration) time.Duration {
+	delay = clampDelayMagnitude(delay)
 	if maxDelay <= 0 {
 		return delay
 	}
@@ -59,6 +64,34 @@ func capDelay(delay, maxDelay time.Duration) time.Duration {
 		return maxDelay
 	}
 	return delay
+}
+
+func clampDelayMagnitude(delay time.Duration) time.Duration {
+	if delay < 0 || delay > MaxBackoffDelay {
+		return MaxBackoffDelay
+	}
+	return delay
+}
+
+func addDelay(a, b time.Duration) time.Duration {
+	a = clampDelayMagnitude(a)
+	b = clampDelayMagnitude(b)
+	if a > MaxBackoffDelay-b {
+		return MaxBackoffDelay
+	}
+	return a + b
+}
+
+func multiplyBackoffDelay(delay time.Duration, multiplier float64, maxDelay time.Duration) time.Duration {
+	delay = clampDelayMagnitude(delay)
+	if multiplier <= 0 || delay == 0 {
+		return capDelay(delay, maxDelay)
+	}
+	scaled := float64(int64(delay)) * multiplier
+	if scaled < 0 || scaled >= float64(math.MaxInt64) {
+		return capDelay(MaxBackoffDelay, maxDelay)
+	}
+	return capDelay(time.Duration(int64(scaled)), maxDelay)
 }
 
 var (
@@ -132,14 +165,13 @@ func (b *Backoff) ExecuteWithBackoff(operation func() error) error {
 			break
 		}
 
-		sleepDelay := baseDelay + jitterForDelay(baseDelay)
+		sleepDelay := addDelay(baseDelay, jitterForDelay(baseDelay))
 		sleepDelay = capDelay(sleepDelay, b.config.MaxDelay)
 
 		b.logRetry(i+1, err, sleepDelay)
 		b.sleep(sleepDelay)
 
-		baseDelay = time.Duration(float64(baseDelay) * b.config.Multiplier)
-		baseDelay = capDelay(baseDelay, b.config.MaxDelay)
+		baseDelay = multiplyBackoffDelay(baseDelay, b.config.Multiplier, b.config.MaxDelay)
 	}
 
 	return errors.Wrap(err, "all retry attempts failed")
