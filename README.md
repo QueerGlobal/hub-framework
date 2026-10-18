@@ -177,6 +177,26 @@ root.
 go test ./...
 ```
 
+### Remote HTTP forwarding configuration
+
+Remote HTTP forwarders (target services and `remote` workflow tasks) share the
+`remoteforward` package. When constructing a forwarder, the following optional
+settings apply:
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `clientTimeout` | duration (seconds in task YAML maps) | HTTP client timeout; defaults to 30s. |
+| `maxResponseBodyBytes` | int | Maximum upstream response body size; default 10 MiB. |
+| `logger` | `*zerolog.Logger` (Go config) | Structured logger; defaults to JSON on stderr. |
+| `sentry.dsn` | string | Sentry DSN; reporting is disabled when empty. |
+| `sentry.environment` | string | Sentry environment tag. |
+| `sentry.release` | string | Sentry release tag. |
+| `sentry.sampleRate` | float | Event sample rate (`0`–`1`); defaults to `1` when DSN is set. |
+
+Call `Shutdown()` on the forwarder when the process exits so Sentry events are flushed.
+Invalid forward URLs and over-limit response bodies are logged and reported with
+`target_host` tags only (never query strings or credentials).
+
 ## Roadmap
 
 As noted above, the reasons for building this project are

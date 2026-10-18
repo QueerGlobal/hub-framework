@@ -12,6 +12,7 @@ import (
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/service/remoteforward"
 	"github.com/QueerGlobal/hub-framework/util"
+	"github.com/rs/zerolog"
 )
 
 type ForwardingService struct {
@@ -19,7 +20,7 @@ type ForwardingService struct {
 	PathPrefix string
 	backoff    *util.Backoff
 	httpClient *http.Client
-	forward    remoteforward.Options
+	forward    remoteforward.ForwardConfig
 }
 
 type ForwardingServiceConfig struct {
@@ -28,6 +29,7 @@ type ForwardingServiceConfig struct {
 	BackoffConfig        util.BackoffConfig
 	ClientTimeout        time.Duration
 	MaxResponseBodyBytes int64
+	Logger               *zerolog.Logger
 	Sentry               remoteforward.SentryConfig
 }
 
@@ -57,12 +59,34 @@ func NewForwardingService(config interface{}) ForwardingService {
 	backoff := util.NewBackoff(cfg.BackoffConfig)
 	svc.backoff = backoff
 	svc.httpClient = remoteforward.NewHTTPClient(cfg.ClientTimeout)
-	svc.forward = remoteforward.Options{
+	settings := remoteforward.ForwardSettings{
 		MaxResponseBodyBytes: cfg.MaxResponseBodyBytes,
-		ErrorReporter:        remoteforward.NewErrorReporter(cfg.Sentry),
+		Logger:               cfg.Logger,
+		Sentry:               cfg.Sentry,
+		UpstreamHost:         cfg.Host,
 	}
+	forwardCfg, err := remoteforward.NewForwardConfig(settings)
+	if err != nil {
+		logger := cfg.Logger
+		if logger == nil {
+			defaultLog := remoteforward.DefaultLogger()
+			logger = &defaultLog
+		}
+		logger.Error().Err(err).Msg("Sentry init failed for remote forwarder; continuing without error reporting")
+		settings.Sentry = remoteforward.SentryConfig{}
+		forwardCfg, err = remoteforward.NewForwardConfig(settings)
+		if err != nil {
+			panic(err)
+		}
+	}
+	svc.forward = forwardCfg
 
 	return svc
+}
+
+// Shutdown flushes monitoring hooks (for example Sentry) for this forwarder.
+func (fs *ForwardingService) Shutdown() {
+	fs.forward.Shutdown()
 }
 
 func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.ServiceResponse, error) {

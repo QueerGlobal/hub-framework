@@ -12,6 +12,7 @@ import (
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/service/remoteforward"
 	"github.com/QueerGlobal/hub-framework/util"
+	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -22,7 +23,7 @@ type ForwardingService struct {
 	name       string
 	backoff    *util.Backoff
 	httpClient *http.Client
-	forward    remoteforward.Options
+	forward    remoteforward.ForwardConfig
 }
 
 func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
@@ -74,22 +75,47 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 		maxResponseBodyBytes = int64(maxBody)
 	}
 
-	var sentryDSN string
+	sentrySettings := remoteforward.SentryConfig{}
 	if sentryCfg, ok := config["sentry"].(map[string]interface{}); ok {
 		if dsn, ok := sentryCfg["dsn"].(string); ok {
-			sentryDSN = dsn
+			sentrySettings.DSN = dsn
 		}
+		if env, ok := sentryCfg["environment"].(string); ok {
+			sentrySettings.Environment = env
+		}
+		if release, ok := sentryCfg["release"].(string); ok {
+			sentrySettings.Release = release
+		}
+		if sampleRate, ok := sentryCfg["sampleRate"].(float64); ok {
+			sentrySettings.SampleRate = sampleRate
+		}
+	}
+
+	var logger *zerolog.Logger
+	if logCfg, ok := config["logger"].(*zerolog.Logger); ok {
+		logger = logCfg
 	}
 
 	backoff := util.NewBackoff(backoffConfig)
 	svc.backoff = backoff
 	svc.httpClient = remoteforward.NewHTTPClient(clientTimeout)
-	svc.forward = remoteforward.Options{
+	forwardCfg, err := remoteforward.NewForwardConfig(remoteforward.ForwardSettings{
 		MaxResponseBodyBytes: maxResponseBodyBytes,
-		ErrorReporter:        remoteforward.NewErrorReporter(remoteforward.SentryConfig{DSN: sentryDSN}),
+		Logger:               logger,
+		Sentry:               sentrySettings,
+		UpstreamHost:         svc.Host,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("remote forward config: %w", err)
 	}
+	svc.forward = forwardCfg
 
 	return &svc, nil
+}
+
+// Shutdown flushes monitoring hooks (for example Sentry) for this forwarder.
+func (fs *ForwardingService) Shutdown() {
+	fs.forward.Shutdown()
 }
 
 func (fs *ForwardingService) Apply(ctx context.Context, request entity.ServiceRequest) error {

@@ -1,3 +1,6 @@
+// Package remoteforward provides shared HTTP forwarding utilities for remote target
+// services and workflow tasks: safe URL resolution with net/url, bounded upstream
+// response reads, structured logging (zerolog), and optional Sentry error reporting.
 package remoteforward
 
 import (
@@ -10,83 +13,12 @@ import (
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/util"
-	"github.com/rs/zerolog"
 )
 
 const (
-	DefaultClientTimeout         = 30 * time.Second
-	DefaultMaxResponseBodyBytes  = 10 << 20 // 10 MiB
+	DefaultClientTimeout        = 30 * time.Second
+	DefaultMaxResponseBodyBytes = 10 << 20 // 10 MiB
 )
-
-// ErrorReporter captures unexpected forward failures (for example Sentry when configured).
-type ErrorReporter interface {
-	ReportError(err error, tags map[string]string)
-}
-
-type noopErrorReporter struct{}
-
-func (noopErrorReporter) ReportError(error, map[string]string) {}
-
-// SentryConfig selects whether forward errors are reported upstream.
-type SentryConfig struct {
-	DSN string
-}
-
-// NewErrorReporter returns a no-op reporter when DSN is empty; otherwise a DSN-backed reporter hook.
-func NewErrorReporter(cfg SentryConfig) ErrorReporter {
-	if strings.TrimSpace(cfg.DSN) == "" {
-		return noopErrorReporter{}
-	}
-	return &dsnErrorReporter{dsn: cfg.DSN}
-}
-
-// dsnErrorReporter is the extension point for Sentry (or similar) when a DSN is configured.
-// Reporting is intentionally lightweight so callers can swap in a real SDK at the application layer.
-type dsnErrorReporter struct {
-	dsn string
-}
-
-func (r *dsnErrorReporter) ReportError(err error, tags map[string]string) {
-	// Hook point: integrate sentry-go or another backend using r.dsn when wiring the application.
-	_ = r.dsn
-	_ = err
-	_ = tags
-}
-
-// Options configures shared remote forward behavior.
-type Options struct {
-	MaxResponseBodyBytes int64
-	Logger               *zerolog.Logger
-	ErrorReporter        ErrorReporter
-}
-
-func (o Options) maxBodyBytes() int64 {
-	if o.MaxResponseBodyBytes > 0 {
-		return o.MaxResponseBodyBytes
-	}
-	return DefaultMaxResponseBodyBytes
-}
-
-func (o Options) report(err error, tags map[string]string) {
-	if o.ErrorReporter == nil {
-		return
-	}
-	o.ErrorReporter.ReportError(err, tags)
-}
-
-func (o Options) logLimitExceeded(limit int64) {
-	if o.Logger == nil {
-		return
-	}
-	o.Logger.Warn().Int64("limitBytes", limit).Msg("upstream response body exceeded configured limit")
-}
-
-func (o Options) logInvalidForwardURL(reason string) {
-	if o.Logger == nil {
-		return
-	}
-	o.Logger.Warn().Str("reason", reason).Msg("invalid remote forward URL")
-}
 
 func NewHTTPClient(timeout time.Duration) *http.Client {
 	if timeout <= 0 {
@@ -97,50 +29,55 @@ func NewHTTPClient(timeout time.Duration) *http.Client {
 
 // BuildForwardURL resolves host, path prefix, and request URL into a single forward target.
 // The result always shares the host and scheme of host; request paths cannot escape to another host.
-func BuildForwardURL(host, pathPrefix string, requestURL *url.URL, opts Options) (string, error) {
+func BuildForwardURL(host, pathPrefix string, requestURL *url.URL, cfg ForwardConfig) (string, error) {
 	base, err := url.Parse(host)
 	if err != nil {
-		wrapped := fmt.Errorf("invalid forward host %q: %w", host, err)
-		opts.logInvalidForwardURL(wrapped.Error())
-		opts.report(wrapped, map[string]string{"stage": "build_forward_url"})
-		return "", wrapped
+		return "", cfg.failInvalidForwardURL(fmt.Errorf("invalid forward host %q: %w", redactedHostURL(host), err))
 	}
 	if base.Scheme == "" || base.Host == "" {
-		wrapped := fmt.Errorf("invalid forward host %q: scheme and host are required", host)
-		opts.logInvalidForwardURL(wrapped.Error())
-		opts.report(wrapped, map[string]string{"stage": "build_forward_url"})
-		return "", wrapped
+		return "", cfg.failInvalidForwardURL(fmt.Errorf("invalid forward host %q: scheme and host are required", redactedHostURL(host)))
 	}
 
-	if requestURL != nil {
-		if requestURL.IsAbs() && requestURL.Host != "" && requestURL.Host != base.Host {
-			wrapped := fmt.Errorf("invalid forward path: absolute URL would escape target host")
-			opts.logInvalidForwardURL(wrapped.Error())
-			opts.report(wrapped, map[string]string{"stage": "build_forward_url"})
-			return "", wrapped
-		}
-		if strings.Contains(requestURL.Path, "//") {
-			wrapped := fmt.Errorf("invalid forward path: contains protocol-relative segment")
-			opts.logInvalidForwardURL(wrapped.Error())
-			opts.report(wrapped, map[string]string{"stage": "build_forward_url"})
-			return "", wrapped
-		}
+	if err := validateRequestURLForForward(base, requestURL); err != nil {
+		return "", cfg.failInvalidForwardURL(err)
 	}
 
+	joinedPath, err := joinForwardPath(pathPrefix, requestURL)
+	if err != nil {
+		return "", cfg.failInvalidForwardURL(err)
+	}
+
+	resolved, err := resolveForwardReference(base, requestURL, joinedPath)
+	if err != nil {
+		return "", cfg.failInvalidForwardURL(err)
+	}
+
+	return resolved.String(), nil
+}
+
+func validateRequestURLForForward(base *url.URL, requestURL *url.URL) error {
+	if requestURL == nil {
+		return nil
+	}
+	if requestURL.IsAbs() && requestURL.Host != "" && requestURL.Host != base.Host {
+		return fmt.Errorf("invalid forward path: absolute URL would escape target host")
+	}
+	if strings.Contains(requestURL.Path, "//") {
+		return fmt.Errorf("invalid forward path: contains protocol-relative segment")
+	}
+	return nil
+}
+
+func joinForwardPath(pathPrefix string, requestURL *url.URL) (string, error) {
 	prefixSegments := pathSegments(pathPrefix)
 	requestSegments := pathSegments("")
 	if requestURL != nil {
 		requestSegments = pathSegments(requestURL.Path)
 	}
+	return url.JoinPath("/", append(prefixSegments, requestSegments...)...)
+}
 
-	joinedPath, err := url.JoinPath("/", append(prefixSegments, requestSegments...)...)
-	if err != nil {
-		wrapped := fmt.Errorf("invalid forward path: %w", err)
-		opts.logInvalidForwardURL(wrapped.Error())
-		opts.report(wrapped, map[string]string{"stage": "build_forward_url"})
-		return "", wrapped
-	}
-
+func resolveForwardReference(base *url.URL, requestURL *url.URL, joinedPath string) (*url.URL, error) {
 	ref := &url.URL{Path: joinedPath}
 	if requestURL != nil && requestURL.RawQuery != "" {
 		ref.RawQuery = requestURL.RawQuery
@@ -148,13 +85,15 @@ func BuildForwardURL(host, pathPrefix string, requestURL *url.URL, opts Options)
 
 	resolved := base.ResolveReference(ref)
 	if resolved.Scheme != base.Scheme || resolved.Host != base.Host {
-		wrapped := fmt.Errorf("invalid forward URL: resolved URL would escape target host")
-		opts.logInvalidForwardURL(wrapped.Error())
-		opts.report(wrapped, map[string]string{"stage": "build_forward_url"})
-		return "", wrapped
+		return nil, fmt.Errorf("invalid forward URL: resolved URL would escape target host")
 	}
+	return resolved, nil
+}
 
-	return resolved.String(), nil
+func (cfg ForwardConfig) failInvalidForwardURL(err error) error {
+	cfg.logInvalidForwardURL(err.Error())
+	cfg.reportError(err, "build_forward_url")
+	return err
 }
 
 func pathSegments(path string) []string {
@@ -193,9 +132,9 @@ func HTTPToServiceResponse(resp *http.Response, body []byte) *entity.HttpService
 }
 
 // ReadLimitedBody reads from r up to limit bytes; limit+1 byte is read to detect overflow.
-func ReadLimitedBody(r io.Reader, limit int64, opts Options) ([]byte, error) {
+func ReadLimitedBody(r io.Reader, limit int64, cfg ForwardConfig) ([]byte, error) {
 	if limit <= 0 {
-		limit = opts.maxBodyBytes()
+		limit = cfg.maxBodyBytes()
 	}
 	lr := io.LimitReader(r, limit+1)
 	body, err := io.ReadAll(lr)
@@ -203,18 +142,22 @@ func ReadLimitedBody(r io.Reader, limit int64, opts Options) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %w", util.UnrecoverableErrorMsg, err)
 	}
 	if int64(len(body)) > limit {
-		overflow := fmt.Errorf("%s: upstream response body exceeds limit of %d bytes", util.UnrecoverableErrorMsg, limit)
-		opts.logLimitExceeded(limit)
-		opts.report(overflow, map[string]string{"stage": "read_response_body"})
-		return nil, overflow
+		return nil, cfg.failBodyLimitExceeded(limit)
 	}
 	return body, nil
 }
 
-func ReadAndValidateResponse(resp *http.Response, opts Options) (*entity.HttpServiceResponse, error) {
+func (cfg ForwardConfig) failBodyLimitExceeded(limit int64) error {
+	overflow := fmt.Errorf("%s: upstream response body exceeds limit of %d bytes", util.UnrecoverableErrorMsg, limit)
+	cfg.logLimitExceeded(limit)
+	cfg.reportError(overflow, "read_response_body")
+	return overflow
+}
+
+func ReadAndValidateResponse(resp *http.Response, cfg ForwardConfig) (*entity.HttpServiceResponse, error) {
 	defer resp.Body.Close()
 
-	body, err := ReadLimitedBody(resp.Body, opts.maxBodyBytes(), opts)
+	body, err := ReadLimitedBody(resp.Body, cfg.maxBodyBytes(), cfg)
 	if err != nil {
 		return nil, err
 	}
