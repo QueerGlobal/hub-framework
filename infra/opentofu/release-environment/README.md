@@ -8,9 +8,19 @@ Remote state lives in **Cloudflare R2** (S3-compatible). The bucket and scoped c
 
 ## Prerequisites
 
-- OpenTofu **1.8+** (variable-based state encryption), tested with **1.10.6**
-- [Doppler CLI](https://docs.doppler.com/docs/cli) with access to project **`hub-framework`**, config **`infra`**
-- After bootstrap: **`GITHUB_TOFU_RELEASE_ENV`** in Doppler (repo **Administration: Read and write**)
+- OpenTofu **1.10.0+** (state/plan encryption and `use_lockfile` on the S3-compatible backend), tested with **1.10.6**
+- [Doppler CLI](https://docs.doppler.com/docs/cli) logged in, with access to project **`hub-framework`**, config **`infra`**
+- **`GITHUB_TOFU_RELEASE_ENV`** in Doppler before bootstrap (repo **Administration: Read and write**)
+
+## Manual, no API
+
+These inputs cannot be created by the bootstrap script:
+
+| Input | Reason |
+| --- | --- |
+| Cloudflare bootstrap API token | Cloudflare does not expose an API to mint the broad bootstrap token safely; you create it in the dashboard. |
+| GitHub fine-grained `GITHUB_TOFU_RELEASE_ENV` | GitHub does not provide an API to create fine-grained personal access tokens; store the token in Doppler manually. |
+| Doppler login | The Doppler CLI requires an interactive or prior `doppler login`; the script only creates the `hub-framework` project and `infra` config if they are missing. |
 
 ## One-time setup (before the first Release workflow run)
 
@@ -22,15 +32,14 @@ A repository **admin** runs the repo entry point once (idempotent; confirms befo
 
 That script:
 
-1. Applies **state-bootstrap** (R2 bucket `queerglobal-hub-framework-tofu-state`, bucket-scoped S3 credentials).
-2. Writes backend settings and credentials to **Doppler** (`hub-framework` / `infra`).
-3. Inits/plans/applies **release-environment** using Doppler-backed `backend-config.hcl`.
+1. Preflights Doppler, Cloudflare token permissions, account ID, and `GITHUB_TOFU_RELEASE_ENV`.
+2. Applies **state-bootstrap** (R2 bucket `queerglobal-hub-framework-tofu-state`, bucket-scoped S3 credentials), then migrates bootstrap state to R2.
+3. Writes backend settings and credentials to **Doppler** (`hub-framework` / `infra`).
+4. Inits/plans/applies **release-environment** using Doppler-backed `backend-config.hcl`.
 
-### What Mark supplies
+### Cloudflare bootstrap token
 
-Only the **Cloudflare bootstrap API token** (`CLOUDFLARE_API_TOKEN`): **R2 Admin Read & Write** on the QueerGlobal account. Export it before running the script. Account ID is read from Doppler `CLOUDFLARE_ACCOUNT_ID` or `CLOUDFLARE_ACCOUNT_ID` in the environment.
-
-All other secrets (bootstrap/release state passphrases, R2 state keys, GitHub token) are created or read via Doppler by the script.
+See `infra/opentofu/state-bootstrap/README.md` for required Cloudflare permissions (API token administration plus R2 edit).
 
 After a successful apply, required reviewers (OpenTofu-managed GitHub user IDs) gate the Release workflow approval step (the workflow itself still only uses `github.token` for tagging).
 

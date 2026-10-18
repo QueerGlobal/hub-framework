@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'infra/**'
+      - 'infra/opentofu/plan-encryption-fixture/**'
       - 'scripts/**'
       - '.github/workflows/infra.yml'
   push:
@@ -11,11 +12,16 @@ on:
       - main
     paths:
       - 'infra/**'
+      - 'infra/opentofu/plan-encryption-fixture/**'
       - 'scripts/**'
       - '.github/workflows/infra.yml'
 
 permissions:
   contents: read
+
+env:
+  TOFU_VERSION: "1.10.6"
+  TOFU_ZIP_SHA256: "15b7bed76420b50da3e121769c43341df8cd57d751ca14e6dbe9c850124c6dac"
 
 jobs:
   opentofu-and-shell:
@@ -26,16 +32,16 @@ jobs:
 
       - name: Install OpenTofu
         run: |
-          TOFU_VERSION="1.10.6"
           TOFU_ZIP="tofu_${TOFU_VERSION}_linux_amd64.zip"
           BASE_URL="https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}"
           curl -fsSL -o /tmp/tofu.zip "${BASE_URL}/${TOFU_ZIP}"
           curl -fsSL -o /tmp/tofu.sha256sums "${BASE_URL}/tofu_${TOFU_VERSION}_SHA256SUMS"
           EXPECTED="$(grep "${TOFU_ZIP}" /tmp/tofu.sha256sums | awk '{print $1}')"
           ACTUAL="$(sha256sum /tmp/tofu.zip | awk '{print $1}')"
-          if [[ -z "${EXPECTED}" || "${EXPECTED}" != "${ACTUAL}" ]]; then
+          if [[ "${EXPECTED}" != "${TOFU_ZIP_SHA256}" || "${EXPECTED}" != "${ACTUAL}" ]]; then
             echo "OpenTofu zip SHA256 mismatch for ${TOFU_ZIP}" >&2
-            echo "expected: ${EXPECTED}" >&2
+            echo "expected (pinned): ${TOFU_ZIP_SHA256}" >&2
+            echo "expected (sums file): ${EXPECTED}" >&2
             echo "actual:   ${ACTUAL}" >&2
             exit 1
           fi
@@ -56,18 +62,28 @@ jobs:
           tofu validate
           tofu test
 
-      - name: OpenTofu validate (release-environment)
+      - name: OpenTofu validate and test (release-environment)
         env:
           TF_VAR_state_encryption_passphrase: mock-release-passphrase-16
         working-directory: infra/opentofu/release-environment
         run: |
           tofu init -backend=false
           tofu validate
+          tofu test
+
+      - name: Plan file encryption test
+        run: scripts/test/plan-encryption-test.sh
 
       - name: Shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck scripts/bootstrap-release-infra.sh scripts/lib/doppler-secrets.sh scripts/test/doppler-secrets-test.sh
+          shellcheck scripts/bootstrap-release-infra.sh \
+            scripts/lib/doppler-secrets.sh \
+            scripts/lib/preflight.sh \
+            scripts/lib/plan-files.sh \
+            scripts/lib/bootstrap-backend-mode.sh \
+            scripts/test/doppler-secrets-test.sh \
+            scripts/test/plan-encryption-test.sh
 
       - name: Doppler secrets helper test
         run: scripts/test/doppler-secrets-test.sh

@@ -38,7 +38,7 @@ if grep -F "${SECRET}" "${LOG}"; then
   exit 1
 fi
 
-if ! grep -Fx "${SECRET}" "${STDIN_CAPTURE}"; then
+if ! grep -qFx "${SECRET}" "${STDIN_CAPTURE}"; then
   echo "FAIL: secret value not passed via stdin" >&2
   exit 1
 fi
