@@ -13,11 +13,10 @@ All notable changes to this project are documented in this file.
 **Before:**
 
 ```go
-svc := remotehttpservice.NewForwardingService(remotehttpservice.ForwardingServiceConfig{
-    Host: cfg.Host,
-    // ...
-})
+svc := remotehttpservice.NewForwardingService(config)
 ```
+
+where `config` was passed as `interface{}` (often a `ForwardingServiceConfig` value) and the function returned only `ForwardingService`.
 
 **After:**
 
