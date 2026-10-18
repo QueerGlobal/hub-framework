@@ -12,7 +12,3 @@ cleanup_plan_files() {
     rm -f "${f}"
   done
 }
-
-install_plan_file_trap() {
-  :
-}

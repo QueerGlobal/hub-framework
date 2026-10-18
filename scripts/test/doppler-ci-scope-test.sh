@@ -55,7 +55,7 @@ case "${cmd}" in
         echo "doppler: access denied to config bootstrap-admin" >&2
         exit 1
       fi
-      if [[ "${name}" == "TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE" ]]; then
+      if [[ "${name}" == "TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE" || "${name}" == "GITHUB_TOFU_RELEASE_ENV" ]]; then
         echo "doppler: secret not found" >&2
         exit 1
       fi
@@ -106,5 +106,12 @@ fi
 if ! doppler_assert_ci_token_cannot_read_bootstrap_admin; then
   exit 1
 fi
+
+if DOPPLER_TOKEN="${DOPPLER_TOKEN}" doppler secrets get GITHUB_TOFU_RELEASE_ENV \
+  --plain -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" >/dev/null 2>&1; then
+  echo "FAIL: infra-scoped token must not read GITHUB_TOFU_RELEASE_ENV from infra config" >&2
+  exit 1
+fi
+echo "OK: infra-scoped token cannot read GITHUB_TOFU_RELEASE_ENV from infra"
 
 echo "OK: infra-scoped Doppler service token denied on bootstrap-admin"

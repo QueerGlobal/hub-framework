@@ -3,18 +3,24 @@ mock_provider "cloudflare" {
 
   mock_resource "cloudflare_r2_bucket" {}
 
-  mock_resource "cloudflare_api_token" {
+  mock_resource "cloudflare_account_token" {
     defaults = {
       id    = "mock-access-key-id"
       value = "mock-token-value"
     }
   }
 
-  mock_data "cloudflare_api_token_permission_groups" {
+  mock_data "cloudflare_account_api_token_permission_groups" {
     defaults = {
-      account = {
-        "Workers R2 Storage Bucket Item Write" = "mock-perm-group"
-      }
+      permission_groups = [
+        {
+          id            = "mock-perm-group"
+          name          = "Workers R2 Storage Bucket Item Write"
+          category      = "Account"
+          is_selectable = "true"
+          scopes        = ["com.cloudflare.api.account"]
+        },
+      ]
     }
   }
 }
@@ -26,9 +32,24 @@ run "bootstrap_plan" {
     cloudflare = cloudflare.cloudflare
   }
 
+  override_data {
+    target = data.cloudflare_account_api_token_permission_groups.r2_bucket_item_write
+    values = {
+      permission_groups = [
+        {
+          id            = "mock-perm-group"
+          name          = "Workers R2 Storage Bucket Item Write"
+          category      = "Account"
+          is_selectable = true
+          scopes        = ["com.cloudflare.api.account"]
+        },
+      ]
+    }
+  }
+
   variables {
-    cloudflare_account_id                        = "00000000000000000000000000000000"
+    cloudflare_account_id                 = "00000000000000000000000000000000"
     bootstrap_state_encryption_passphrase = "mock-bootstrap-passphrase-16"
-    state_bucket_name                            = "queerglobal-hub-framework-tofu-state"
+    state_bucket_name                     = "queerglobal-hub-framework-tofu-state"
   }
 }

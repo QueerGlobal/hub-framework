@@ -21,11 +21,11 @@ run "plan_leak" {
 
   variables {
     state_encryption_passphrase = "plan-leak-release-passphrase-xyzzy"
-    github_owner                       = "QueerGlobal"
-    github_repository                  = "hub-framework"
-    environment_name                   = "release"
-    reviewer_usernames                 = ["mnyon-grandkru"]
-    reviewer_team_slug                 = ""
-    release_branch_pattern             = "main"
+    github_owner                = "QueerGlobal"
+    github_repository           = "hub-framework"
+    environment_name            = "release"
+    reviewer_usernames          = ["mnyon-grandkru"]
+    reviewer_team_slug          = ""
+    release_branch_pattern      = "main"
   }
 }

@@ -6,13 +6,62 @@ cloudflare_preflight_mock_install() {
   mkdir -p "${fake_bin}"
 
   cat > "${fake_bin}/curl" <<'MOCK'
-#!/usr/bin/env bash
+#!/usr/bin/bash
 set -euo pipefail
-url="${@: -1}"
-method="GET"
-if [[ "${1:-}" == "-X" ]]; then
-  method="${2:-GET}"
+if [[ -n "${ARGV_SHIM_LOG:-}" ]]; then
+  {
+    printf 'SHIM:curl ARGV:'
+    printf '%q ' "$@"
+    printf '\n'
+    tr '\0' ' ' < /proc/self/cmdline
+    printf '\n'
+  } >> "${ARGV_SHIM_LOG}"
 fi
+url=""
+method="GET"
+args=("$@")
+idx=0
+want_http_code=0
+while [[ ${idx} -lt ${#args[@]} ]]; do
+  case "${args[$idx]}" in
+    -X)
+      method="${args[$((idx + 1))]:-GET}"
+      idx=$((idx + 2))
+      ;;
+    -H)
+      idx=$((idx + 2))
+      ;;
+    -o)
+      idx=$((idx + 2))
+      ;;
+    -w)
+      if [[ "${args[$((idx + 1))]:-}" == *http_code* ]]; then
+        want_http_code=1
+      fi
+      idx=$((idx + 2))
+      ;;
+    --data-binary)
+      idx=$((idx + 2))
+      ;;
+    http*|/*)
+      url="${args[$idx]}"
+      idx=$((idx + 1))
+      ;;
+    *)
+      idx=$((idx + 1))
+      ;;
+  esac
+done
+if [[ -z "${url}" ]]; then
+  url="${@: -1}"
+fi
+emit_http() {
+  local code=$1
+  if [[ "${want_http_code}" == 1 ]]; then
+    printf '%s' "${code}"
+    exit 0
+  fi
+}
 fixture_root="${CF_PREFLIGHT_FIXTURE_ROOT:?}"
 
 r2_list_ok=${CF_MOCK_R2_OK:-1}
@@ -79,6 +128,15 @@ if [[ "${url}" == *"/tokens/permission_groups"* ]]; then
     exit 0
   fi
   printf '%s\n' '{"success":false,"errors":[{"code":1000,"message":"catalog denied"}],"messages":[],"result":null}'
+  exit 0
+fi
+
+if [[ "${method}" == "POST" && "${url}" == *"/accounts/"*"/tokens" && "${url}" != *"/tokens/verify"* ]]; then
+  if [[ "${want_http_code}" == 1 ]]; then
+    printf '400'
+    exit 0
+  fi
+  printf '%s\n' '{"success":false,"errors":[{"code":1000,"message":"invalid token body"}],"messages":[],"result":null}'
   exit 0
 fi
 
