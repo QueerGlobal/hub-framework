@@ -2,10 +2,11 @@ package util
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"math/rand"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 var UnrecoverableErrorMsg = "error is unrecoverable - backoff cancelled"
@@ -19,17 +20,44 @@ type BackoffConfig struct {
 
 type Backoff struct {
 	config BackoffConfig
+	sleep  func(time.Duration)
 }
 
 func NewBackoff(config BackoffConfig) *Backoff {
-	return &Backoff{config: config}
+	return &Backoff{
+		config: config,
+		sleep:  time.Sleep,
+	}
+}
+
+func (b *Backoff) maxAttempts() int {
+	if b.config.MaxRetries <= 0 {
+		return 1
+	}
+	return b.config.MaxRetries
+}
+
+func jitterForDelay(delay time.Duration) time.Duration {
+	jitterRange := int64(delay / 2)
+	if jitterRange <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int63n(jitterRange))
+}
+
+func capDelay(delay, maxDelay time.Duration) time.Duration {
+	if delay > maxDelay {
+		return maxDelay
+	}
+	return delay
 }
 
 func (b *Backoff) ExecuteWithBackoff(operation func() error) error {
-	delay := b.config.InitialDelay
+	baseDelay := b.config.InitialDelay
 
 	var err error
-	for i := 0; i < b.config.MaxRetries; i++ {
+	maxAttempts := b.maxAttempts()
+	for i := 0; i < maxAttempts; i++ {
 		err = operation()
 		if err == nil {
 			return nil
@@ -40,16 +68,18 @@ func (b *Backoff) ExecuteWithBackoff(operation func() error) error {
 			return err
 		}
 
-		fmt.Printf("Attempt %d failed: %v. Retrying in %v...\n", i+1, err, delay) // TODO - replace this with proper logging
-		time.Sleep(delay)
-
-		// Calculate next delay with jitter
-		delay = time.Duration(float64(delay) * b.config.Multiplier)
-		if delay > b.config.MaxDelay {
-			delay = b.config.MaxDelay
+		if i == maxAttempts-1 {
+			break
 		}
-		jitter := time.Duration(rand.Int63n(int64(delay / 2)))
-		delay += jitter
+
+		sleepDelay := baseDelay + jitterForDelay(baseDelay)
+		sleepDelay = capDelay(sleepDelay, b.config.MaxDelay)
+
+		fmt.Printf("Attempt %d failed: %v. Retrying in %v...\n", i+1, err, sleepDelay) // TODO - replace this with proper logging
+		b.sleep(sleepDelay)
+
+		baseDelay = time.Duration(float64(baseDelay) * b.config.Multiplier)
+		baseDelay = capDelay(baseDelay, b.config.MaxDelay)
 	}
 
 	return errors.Wrap(err, "all retry attempts failed")
