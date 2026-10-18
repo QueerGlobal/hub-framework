@@ -248,9 +248,21 @@ Other key priorities include:
 
 Version tags and GitHub releases are created with the **Release** workflow (`.github/workflows/release.yml`), not by hand.
 
+The workflow runs in the GitHub Actions **release** environment. Create that environment and its required reviewers once with OpenTofu:
+
+```bash
+cd infra/opentofu/release-environment
+tofu init && tofu apply
+```
+
+See `infra/opentofu/release-environment/README.md` for variables (reviewer usernames, optional team slug, and branch pattern).
+
+To cut a release after the environment exists:
+
 1. Open **Actions → Release → Run workflow** on the branch you want to tag (usually `main`).
 2. Enter a semver tag such as `v1.2.3`.
-3. The workflow validates the tag name, creates an annotated Git tag, pushes it, and opens a GitHub release with generated release notes.
+3. Approve the deployment if your account is a configured reviewer.
+4. The workflow validates the tag name, creates an annotated Git tag, pushes it, and opens a GitHub release with generated release notes.
 
 The release job is the only job that requests `contents: write`; other workflows stay read-only.
 
