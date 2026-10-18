@@ -134,6 +134,12 @@ preflight_cloudflare_verify_token_id() {
     "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/verify" 2>/dev/null || true)"
   if [[ "$(echo "${verify}" | jq -r '.success // false')" == "true" ]]; then
     preflight_cloudflare_verify_result_active "${verify}" || return 1
+    local verify_account_id
+    verify_account_id="$(echo "${verify}" | jq -r '.result.account.id // empty')"
+    if [[ -n "${verify_account_id}" && "${verify_account_id}" != "${account_id}" ]]; then
+      echo "Cloudflare token verify is for account ${verify_account_id}, not configured account ${account_id}." >&2
+      return 1
+    fi
     token_id="$(echo "${verify}" | jq -r '.result.id // empty')"
     if [[ -n "${token_id}" ]]; then
       printf '%s' "${token_id}"

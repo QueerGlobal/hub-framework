@@ -10,7 +10,7 @@ Export `CLOUDFLARE_API_TOKEN` before running `scripts/bootstrap-release-infra.sh
 
 1. **Verify** the token is **active**: `GET /accounts/{account_id}/tokens/verify`, then `GET /user/tokens/verify` if needed.
 2. **R2 list buckets**: `GET /accounts/{account_id}/r2/buckets?per_page=1` (proves account-scoped R2 access; does not prove Write).
-3. **Permission groups read**: `GET /accounts/{account_id}/tokens/permission_groups?per_page=1` (same read the bootstrap stack uses via `data.cloudflare_api_token_permission_groups`).
+3. **Permission groups read**: `GET /accounts/{account_id}/tokens/permission_groups?per_page=1` (same catalog read the bootstrap stack uses via `data.cloudflare_api_token_permission_groups`). Grant **Account API Tokens Write** on the bootstrap token so this read succeeds; capability probes treat an effective deny as HTTP **403** and fail closed.
 
 **R2 Write** cannot be proven with a list call. If the token only has R2 Read, preflight may still pass; the **first OpenTofu apply** fails closed when creating the bucket (no durable resource change). See `scripts/test/cloudflare-r2-write-fails-closed-test.sh`.
 
@@ -47,8 +47,9 @@ Committed config keeps a **single** key provider **`bootstrap`** (no fallback). 
 2. From the repo root:
 
 ```bash
-./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/state-bootstrap bootstrap \
-  "${TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE}" "${TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT}"
+TOFU_ROTATE_OLD_PASSPHRASE="${TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE}" \
+TOFU_ROTATE_NEW_PASSPHRASE="${TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT}" \
+  ./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/state-bootstrap bootstrap
 ```
 
 3. Update `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE` in `bootstrap-admin` to the new value and remove `_NEXT`.

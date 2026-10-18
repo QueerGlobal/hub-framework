@@ -36,6 +36,14 @@ terraform {
 EOF
 }
 
+# Mirrors bootstrap E2E release init backend switch (no OpenTofu calls).
+release_backend_e2e_init_dry_run() {
+  local dir=$1
+  if [[ "${BOOTSTRAP_E2E:-}" == "1" ]]; then
+    release_backend_enable_local "${dir}"
+  fi
+}
+
 release_backend_disable_local() {
   local dir=$1
   local s3_tf hidden override

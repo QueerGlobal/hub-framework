@@ -26,7 +26,8 @@ cp "${FIXTURE}/variables.tf" "${FIXTURE}/main.tf" "${FIXTURE}/versions.tf" "${WO
   "${TOFU}" apply -input=false -auto-approve >/dev/null
 )
 
-"${ROTATE}" "${WORKDIR}" bootstrap "${PASS_A}" "${PASS_B}"
+TOFU_ROTATE_OLD_PASSPHRASE="${PASS_A}" TOFU_ROTATE_NEW_PASSPHRASE="${PASS_B}" \
+  "${ROTATE}" "${WORKDIR}" bootstrap
 
 (
   cd "${WORKDIR}"
@@ -54,7 +55,8 @@ if ! tofu_assert_state_method_metadata "${WORKDIR}/terraform.tfstate" bootstrap;
 fi
 echo "OK: state metadata on key_provider.pbkdf2.bootstrap after first rotation"
 
-"${ROTATE}" "${WORKDIR}" bootstrap "${PASS_B}" "${PASS_C}"
+TOFU_ROTATE_OLD_PASSPHRASE="${PASS_B}" TOFU_ROTATE_NEW_PASSPHRASE="${PASS_C}" \
+  "${ROTATE}" "${WORKDIR}" bootstrap
 
 (
   cd "${WORKDIR}"

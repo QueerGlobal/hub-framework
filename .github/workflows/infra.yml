@@ -96,6 +96,12 @@ jobs:
       - name: Encryption rotation test
         run: scripts/test/encryption-rotation-test.sh
 
+      - name: Encryption rotation argv test
+        run: scripts/test/encryption-rotation-argv-test.sh
+
+      - name: Release backend E2E guard test
+        run: scripts/test/release-backend-e2e-guard-test.sh
+
       - name: Doppler CI isolation test
         run: scripts/test/doppler-ci-isolation-test.sh
 
@@ -105,32 +111,8 @@ jobs:
       - name: Shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck scripts/bootstrap-release-infra.sh \
-            scripts/lib/doppler-secrets.sh \
-            scripts/lib/preflight.sh \
-            scripts/lib/plan-files.sh \
-            scripts/lib/bootstrap-backend-mode.sh \
-            scripts/lib/doppler-configs.sh \
-            scripts/lib/doppler-ci-token.sh \
-            scripts/lib/cloudflare-preflight-permissions.sh \
-            scripts/lib/bootstrap-doppler-sync.sh \
-            scripts/lib/release-backend-mode.sh \
-            scripts/lib/cloudflare-r2-first-write.sh \
-            scripts/lib/tofu-encryption-metadata.sh \
-            scripts/tofu-rotate-encryption-passphrase.sh \
-            scripts/test/doppler-secrets-test.sh \
-            scripts/test/doppler-ci-isolation-test.sh \
-            scripts/test/doppler-ci-scope-test.sh \
-            scripts/test/doppler-ci-runtime-guard.sh \
-            scripts/test/encryption-rotation-test.sh \
-            scripts/test/plan-encryption-test.sh \
-            scripts/test/cloudflare-preflight-test.sh \
-            scripts/test/cloudflare-preflight-account-token-test.sh \
-            scripts/test/cloudflare-preflight-mutations-test.sh \
-            scripts/test/cloudflare-r2-write-fails-closed-test.sh \
-            scripts/test/doppler-ci-runtime-guard-test.sh \
-            scripts/test/bootstrap-e2e-clean-checkout-test.sh \
-            scripts/test/bootstrap-backend-restore-test.sh
+          mapfile -t shell_scripts < <(find scripts -type f -name '*.sh' | sort)
+          shellcheck -S warning "${shell_scripts[@]}"
 
       - name: Doppler secrets helper test
         run: scripts/test/doppler-secrets-test.sh

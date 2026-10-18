@@ -5,7 +5,7 @@ cloudflare_r2_first_write_allowed() {
   local token=$1
   local account_id=$2
   local bucket_name=$3
-  local resp http_code body_file
+  local http_code body_file
   body_file="$(mktemp)"
   http_code="$(curl -sS -o "${body_file}" -w '%{http_code}' \
     -X POST \
