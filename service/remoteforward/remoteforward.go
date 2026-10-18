@@ -91,7 +91,7 @@ func resolveForwardReference(base *url.URL, requestURL *url.URL, joinedPath stri
 }
 
 func (cfg ForwardConfig) failInvalidForwardURL(err error) error {
-	wrapped := fmt.Errorf("%s: %w", util.UnrecoverableErrorMsg, err)
+	wrapped := fmt.Errorf("%w: %w", util.ErrUnrecoverable, err)
 	cfg.logInvalidForwardURL(err.Error())
 	cfg.reportError(wrapped, "build_forward_url")
 	return wrapped
@@ -110,7 +110,7 @@ func StatusCodeError(statusCode int) error {
 		return fmt.Errorf("remote server returned status %d", statusCode)
 	}
 	if statusCode >= 400 {
-		return fmt.Errorf("%s: remote server returned status %d", util.UnrecoverableErrorMsg, statusCode)
+		return fmt.Errorf("%w: remote server returned status %d", util.ErrUnrecoverable, statusCode)
 	}
 	return nil
 }
@@ -140,7 +140,7 @@ func ReadLimitedBody(r io.Reader, limit int64, cfg ForwardConfig) ([]byte, error
 	lr := io.LimitReader(r, limit+1)
 	body, err := io.ReadAll(lr)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", util.UnrecoverableErrorMsg, err)
+		return nil, fmt.Errorf("%w: %w", util.ErrUnrecoverable, err)
 	}
 	if int64(len(body)) > limit {
 		return nil, cfg.failBodyLimitExceeded(limit)
@@ -149,7 +149,7 @@ func ReadLimitedBody(r io.Reader, limit int64, cfg ForwardConfig) ([]byte, error
 }
 
 func (cfg ForwardConfig) failBodyLimitExceeded(limit int64) error {
-	overflow := fmt.Errorf("%s: upstream response body exceeds limit of %d bytes", util.UnrecoverableErrorMsg, limit)
+	overflow := fmt.Errorf("%w: upstream response body exceeds limit of %d bytes", util.ErrUnrecoverable, limit)
 	cfg.logLimitExceeded(limit)
 	cfg.reportError(overflow, "read_response_body")
 	return overflow

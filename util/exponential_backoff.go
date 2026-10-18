@@ -1,19 +1,25 @@
 package util
 
 import (
+	stderrors "errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"net/url"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 )
 
 var UnrecoverableErrorMsg = "error is unrecoverable - backoff cancelled"
+
+// ErrUnrecoverable indicates an operation failure that must not be retried.
+var ErrUnrecoverable = stderrors.New(UnrecoverableErrorMsg)
+
+// ErrRetryAttemptsExhausted indicates backoff retries were exhausted.
+var ErrRetryAttemptsExhausted = stderrors.New("all retry attempts failed")
 
 // MaxBackoffDelay is the hard ceiling for scaled retry delays (overflow protection).
 const MaxBackoffDelay = time.Duration(math.MaxInt64)
@@ -164,7 +170,7 @@ func (b *Backoff) ExecuteWithBackoff(operation func() error) error {
 			return nil
 		}
 
-		if strings.Contains(err.Error(), UnrecoverableErrorMsg) {
+		if stderrors.Is(err, ErrUnrecoverable) {
 			b.logUnrecoverable(err)
 			return RedactURLError(err)
 		}
@@ -182,5 +188,5 @@ func (b *Backoff) ExecuteWithBackoff(operation func() error) error {
 		baseDelay = multiplyBackoffDelay(baseDelay, b.config.Multiplier, b.config.MaxDelay)
 	}
 
-	return errors.Wrap(RedactURLError(err), "all retry attempts failed")
+	return fmt.Errorf("%w: %w", ErrRetryAttemptsExhausted, RedactURLError(err))
 }

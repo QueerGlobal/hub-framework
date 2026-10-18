@@ -1,7 +1,7 @@
 package remoteforward
 
 import (
-	"strings"
+	"errors"
 
 	"github.com/QueerGlobal/hub-framework/util"
 )
@@ -13,8 +13,8 @@ func ShouldReportExhaustedHTTPFailure(err error) bool {
 	if err == nil {
 		return false
 	}
-	if strings.Contains(err.Error(), util.UnrecoverableErrorMsg) {
+	if errors.Is(err, util.ErrUnrecoverable) {
 		return false
 	}
-	return strings.Contains(err.Error(), "all retry attempts failed")
+	return errors.Is(err, util.ErrRetryAttemptsExhausted)
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
@@ -34,19 +33,7 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 	}
 
 	if pathPrefix, ok := config["pathprefix"].(string); ok {
-		if len(pathPrefix) > 0 {
-			// Prepend "/" if it doesn't exist
-			if !strings.HasPrefix(pathPrefix, "/") {
-				pathPrefix = "/" + pathPrefix
-			}
-
-			// Append "/" if it doesn't exist
-			if !strings.HasSuffix(pathPrefix, "/") {
-				pathPrefix = pathPrefix + "/"
-			}
-		}
-
-		svc.PathPrefix = pathPrefix
+		svc.PathPrefix = remoteforward.NormalizePathPrefix(pathPrefix)
 	}
 
 	var backoffConfig util.BackoffConfig
@@ -114,38 +101,6 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 	svc.forward = forwardCfg
 
 	return &svc, nil
-}
-
-// NewForwardingServiceWithSettings builds a remote forwarder task from explicit forward settings (for tests).
-func NewForwardingServiceWithSettings(
-	host string,
-	pathPrefix string,
-	settings remoteforward.ForwardSettings,
-	backoffConfig util.BackoffConfig,
-	clientTimeout time.Duration,
-) (entity.Task, error) {
-	if len(pathPrefix) > 0 {
-		if !strings.HasPrefix(pathPrefix, "/") {
-			pathPrefix = "/" + pathPrefix
-		}
-		if !strings.HasSuffix(pathPrefix, "/") {
-			pathPrefix = pathPrefix + "/"
-		}
-	}
-	settings.UpstreamHost = host
-	forwardCfg, err := remoteforward.NewForwardConfig(settings)
-	if err != nil {
-		return nil, err
-	}
-	backoffConfig.TargetURL = host
-	backoff := util.NewBackoff(backoffConfig)
-	return &ForwardingService{
-		Host:       host,
-		PathPrefix: pathPrefix,
-		backoff:    backoff,
-		httpClient: remoteforward.NewHTTPClient(clientTimeout),
-		forward:    forwardCfg,
-	}, nil
 }
 
 // Shutdown flushes monitoring hooks (for example Sentry) for this forwarder.

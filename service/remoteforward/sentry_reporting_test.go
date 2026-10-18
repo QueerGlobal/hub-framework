@@ -10,7 +10,7 @@ import (
 
 func TestShouldReportExhaustedHTTPFailure(t *testing.T) {
 	assert.False(t, ShouldReportExhaustedHTTPFailure(nil))
-	assert.False(t, ShouldReportExhaustedHTTPFailure(fmt.Errorf("%s: status 404", util.UnrecoverableErrorMsg)))
-	assert.False(t, ShouldReportExhaustedHTTPFailure(fmt.Errorf("%s: invalid host", util.UnrecoverableErrorMsg)))
-	assert.True(t, ShouldReportExhaustedHTTPFailure(fmt.Errorf("all retry attempts failed: remote server returned status 503")))
+	assert.False(t, ShouldReportExhaustedHTTPFailure(fmt.Errorf("%w: status 404", util.ErrUnrecoverable)))
+	assert.False(t, ShouldReportExhaustedHTTPFailure(fmt.Errorf("%w: invalid host", util.ErrUnrecoverable)))
+	assert.True(t, ShouldReportExhaustedHTTPFailure(fmt.Errorf("%w: remote server returned status 503", util.ErrRetryAttemptsExhausted)))
 }

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,7 +79,7 @@ func TestExecuteWithBackoff_UnrecoverableErrorStopsImmediately(t *testing.T) {
 	var calls atomic.Int32
 	err := b.ExecuteWithBackoff(func() error {
 		calls.Add(1)
-		return errors.Errorf("%s: boom", UnrecoverableErrorMsg)
+		return fmt.Errorf("%w: boom", ErrUnrecoverable)
 	})
 
 	require.Error(t, err)

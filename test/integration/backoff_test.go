@@ -44,7 +44,7 @@ func TestBackoffHTTPRetryEndToEnd(t *testing.T) {
 				return fmt.Errorf("upstream status %d", resp.StatusCode)
 			}
 			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("%s: status %d", util.UnrecoverableErrorMsg, resp.StatusCode)
+				return fmt.Errorf("%w: status %d", util.ErrUnrecoverable, resp.StatusCode)
 			}
 			body = "ok"
 			return nil

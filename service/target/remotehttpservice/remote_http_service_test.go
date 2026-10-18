@@ -36,6 +36,13 @@ func assertTimeoutDetectable(t *testing.T, err error) {
 	assert.Contains(t, strings.ToLower(err.Error()), "timeout")
 }
 
+func requireForwardingService(t *testing.T, cfg ForwardingServiceConfig) ForwardingService {
+	t.Helper()
+	svc, err := NewForwardingService(cfg)
+	require.NoError(t, err)
+	return svc
+}
+
 func testBackoff(maxRetries int) util.BackoffConfig {
 	return util.BackoffConfig{
 		InitialDelay: 5 * time.Millisecond,
@@ -62,7 +69,7 @@ func TestForwardingService_SuccessJSONResponse(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          ts.URL,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(2),
@@ -86,7 +93,7 @@ func TestNewForwardingService_InvalidSentryDSNStillWorks(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          ts.URL,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(1),
@@ -110,7 +117,7 @@ func TestForwardingService_ServerErrorRetriesThenFails(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          ts.URL,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(2),
@@ -132,7 +139,7 @@ func TestForwardingService_ClientErrorNoRetry(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          ts.URL,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(3),
@@ -154,7 +161,7 @@ func TestForwardingService_NoDoubleSlashInForwardedPath(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          ts.URL,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(1),
@@ -177,7 +184,7 @@ func TestForwardingService_ResponseBodyUnderLimit(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:                 ts.URL,
 		PathPrefix:           "api",
 		BackoffConfig:        testBackoff(1),
@@ -199,7 +206,7 @@ func TestForwardingService_ResponseBodyOverLimit(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:                 ts.URL,
 		PathPrefix:           "api",
 		BackoffConfig:        testBackoff(1),
@@ -217,7 +224,7 @@ func TestForwardingService_InvalidForwardHostReportsExactlyOneSentryEvent(t *tes
 	transport := remoteforwardtest.NewRecordingSentryTransport()
 	const badHost = "http://forwarduser:forwardpass@%zz"
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          badHost,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(3),
@@ -245,7 +252,7 @@ func TestForwardingService_OversizedResponseReportsExactlyOneSentryEvent(t *test
 	t.Cleanup(ts.Close)
 
 	transport := remoteforwardtest.NewRecordingSentryTransport()
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:                 ts.URL,
 		PathPrefix:           "api",
 		BackoffConfig:        testBackoff(3),
@@ -274,7 +281,7 @@ func TestForwardingService_NotFoundReportsNoSentryEvents(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	transport := remoteforwardtest.NewRecordingSentryTransport()
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          ts.URL,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(3),
@@ -307,7 +314,7 @@ func TestForwardingService_NetworkTimeoutRedactsURLInErrorLogsAndSentry(t *testi
 	var logBuf bytes.Buffer
 	log := zerolog.New(&logBuf).With().Timestamp().Logger()
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          hostWithCreds,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(2),
@@ -342,7 +349,7 @@ func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *te
 	var logBuf bytes.Buffer
 	log := zerolog.New(&logBuf).With().Timestamp().Logger()
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          hostWithCreds,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(1),
@@ -381,7 +388,7 @@ func TestForwardingService_RetrySuccessReportsNoSentryEvents(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          ts.URL,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(3),
@@ -411,7 +418,7 @@ func TestForwardingService_ClientTimeoutReportsExactlyOneSentryEvent(t *testing.
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          ts.URL,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(2),
@@ -440,7 +447,7 @@ func TestForwardingService_ClientTimeout(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	svc := NewForwardingService(ForwardingServiceConfig{
+	svc := requireForwardingService(t, ForwardingServiceConfig{
 		Host:          ts.URL,
 		PathPrefix:    "api",
 		BackoffConfig: testBackoff(2),

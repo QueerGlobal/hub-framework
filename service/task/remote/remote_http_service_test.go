@@ -47,6 +47,30 @@ func newTask(t *testing.T, tsURL string, maxRetries int, clientTimeoutSec float6
 	return task
 }
 
+func newForwardingServiceForTest(
+	t *testing.T,
+	host string,
+	pathPrefix string,
+	settings remoteforward.ForwardSettings,
+	backoffConfig util.BackoffConfig,
+	clientTimeout time.Duration,
+) entity.Task {
+	t.Helper()
+	settings.UpstreamHost = host
+	forwardCfg, err := remoteforward.NewForwardConfig(settings)
+	require.NoError(t, err)
+	backoffConfig.TargetURL = host
+	task := &ForwardingService{
+		Host:       host,
+		PathPrefix: remoteforward.NormalizePathPrefix(pathPrefix),
+		backoff:    util.NewBackoff(backoffConfig),
+		httpClient: remoteforward.NewHTTPClient(clientTimeout),
+		forward:    forwardCfg,
+	}
+	t.Cleanup(task.Shutdown)
+	return task
+}
+
 func newTaskWithSentry(
 	t *testing.T,
 	host string,
@@ -60,12 +84,7 @@ func newTaskWithSentry(
 		DSN:       "https://public@sentry.io/1",
 		Transport: transport,
 	}
-	task, err := NewForwardingServiceWithSettings(host, "api", settings, testBackoff(maxRetries), clientTimeout)
-	require.NoError(t, err)
-	if shutdown, ok := task.(interface{ Shutdown() }); ok {
-		t.Cleanup(shutdown.Shutdown)
-	}
-	return task
+	return newForwardingServiceForTest(t, host, "api", settings, testBackoff(maxRetries), clientTimeout)
 }
 
 func testRequest(path string) *entity.HTTPServiceRequest {

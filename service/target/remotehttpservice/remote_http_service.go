@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
@@ -33,28 +32,11 @@ type ForwardingServiceConfig struct {
 	Sentry               remoteforward.SentryConfig
 }
 
-func NewForwardingService(config interface{}) ForwardingService {
+func NewForwardingService(cfg ForwardingServiceConfig) (ForwardingService, error) {
 	svc := ForwardingService{}
 
-	cfg := config.(ForwardingServiceConfig)
-
 	svc.Host = cfg.Host
-
-	pathPrefix := cfg.PathPrefix
-
-	if len(pathPrefix) > 0 {
-		// Prepend "/" if it doesn't exist
-		if !strings.HasPrefix(pathPrefix, "/") {
-			pathPrefix = "/" + pathPrefix
-		}
-
-		// Append "/" if it doesn't exist
-		if !strings.HasSuffix(pathPrefix, "/") {
-			pathPrefix = pathPrefix + "/"
-		}
-	}
-
-	svc.PathPrefix = pathPrefix
+	svc.PathPrefix = remoteforward.NormalizePathPrefix(cfg.PathPrefix)
 
 	backoffConfig := cfg.BackoffConfig
 	backoffConfig.TargetURL = cfg.Host
@@ -74,15 +56,15 @@ func NewForwardingService(config interface{}) ForwardingService {
 	if err != nil {
 		if cfg.Logger != nil {
 			cfg.Logger.Error().Err(err).Msg("remote forward config failed")
+		} else {
+			log := remoteforward.DefaultLogger()
+			log.Error().Err(err).Msg("remote forward config failed")
 		}
-		forwardCfg, _ = remoteforward.NewForwardConfig(remoteforward.ForwardSettings{
-			Logger:       cfg.Logger,
-			UpstreamHost: cfg.Host,
-		})
+		return ForwardingService{}, err
 	}
 	svc.forward = forwardCfg
 
-	return svc
+	return svc, nil
 }
 
 // Shutdown flushes monitoring hooks (for example Sentry) for this forwarder.
@@ -107,7 +89,7 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 
 		var payload map[string]interface{}
 		if err := json.Unmarshal(parsed.GetBody(), &payload); err != nil {
-			return fmt.Errorf("error unmarshaling response: %s: %w", util.UnrecoverableErrorMsg, err)
+			return fmt.Errorf("error unmarshaling response: %w: %w", util.ErrUnrecoverable, err)
 		}
 
 		serviceResponse = &forwardedJSONResponse{
