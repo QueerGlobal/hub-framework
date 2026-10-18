@@ -42,6 +42,10 @@ github_preflight_run() {
   fake_bin="${testdir}/bin"
   export CF_PREFLIGHT_FIXTURE_ROOT="${root}/scripts/test/fixtures/cloudflare"
   cloudflare_preflight_mock_install "${fake_bin}"
+  # By default no Doppler project exists, so the token can only come from the environment.
+  # GITHUB_MOCK_DOPPLER=empty makes the project exist with an empty GITHUB_TOFU_RELEASE_ENV.
+  printf '#!/usr/bin/bash\n[[ "${GITHUB_MOCK_DOPPLER:-none}" == empty ]] && exit 0\nexit 1\n' >"${fake_bin}/doppler"
+  chmod +x "${fake_bin}/doppler"
   out="$(
     (
       export PATH="${fake_bin}:${PATH}"
@@ -60,13 +64,25 @@ github_preflight_run() {
 
 BASE=(
   GITHUB_TOFU_RELEASE_ENV=mock-github-pat-for-preflight-test
-  GITHUB_MOCK_USER_OK=1
+  GITHUB_MOCK_USER=ok
 )
 
 assert_passes "github user API" "${BASE[@]}"
 
-assert_fails_with "invalid github token" \
+assert_fails_with "github token rejected with 401" \
+  "GitHub rejected GITHUB_TOFU_RELEASE_ENV or could not be reached" \
+  "${BASE[@]}" GITHUB_MOCK_USER=401
+
+assert_fails_with "github 200 without a login" \
   "not a valid GitHub token (user API returned no login)" \
-  "${BASE[@]}" GITHUB_MOCK_USER_OK=0
+  "${BASE[@]}" GITHUB_MOCK_USER=nologin
+
+assert_fails_with "github token missing" \
+  "Set GITHUB_TOFU_RELEASE_ENV in the environment" \
+  GITHUB_TOFU_RELEASE_ENV= GITHUB_MOCK_USER=ok
+
+assert_fails_with "github token empty in Doppler" \
+  "GITHUB_TOFU_RELEASE_ENV is empty in Doppler hub-framework/bootstrap-admin" \
+  GITHUB_TOFU_RELEASE_ENV= GITHUB_MOCK_DOPPLER=empty GITHUB_MOCK_USER=ok
 
 echo "OK: GitHub token preflight mutation checks passed"

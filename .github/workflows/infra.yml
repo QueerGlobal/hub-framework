@@ -108,3 +108,9 @@ jobs:
 
       - name: Doppler secrets helper test
         run: scripts/test/doppler-secrets-test.sh
+
+      - name: Bootstrap Doppler secret presence test
+        run: scripts/test/bootstrap-doppler-sync-test.sh
+
+      - name: Release gate test
+        run: scripts/test/release-gate-test.sh

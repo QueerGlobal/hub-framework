@@ -47,40 +47,14 @@ preflight_ensure_doppler_project_and_config() {
   fi
 }
 
-preflight_doppler_secret_exists() {
-  local name=$1
-  local project=$2
-  local config=$3
-  if ! doppler secrets get "${name}" --plain -p "${project}" -c "${config}" >/dev/null 2>&1; then
-    echo "Missing Doppler secret ${name} in ${project}/${config}." >&2
-    return 1
-  fi
-}
-
-preflight_cloudflare_account_id_resolved() {
-  local project=$1
-  local config=$2
-  local from_doppler
-  if [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
-    printf '%s' "${CLOUDFLARE_ACCOUNT_ID}"
-    return 0
-  fi
-  if preflight_doppler_project_exists "${project}"; then
-    from_doppler="$(doppler secrets get CLOUDFLARE_ACCOUNT_ID --plain -p "${project}" -c "${config}" 2>/dev/null || true)"
-    if [[ -n "${from_doppler}" ]]; then
-      printf '%s' "${from_doppler}"
-      return 0
-    fi
-  fi
-  return 1
-}
-
-# Returns configured Cloudflare account id or prints a reason and fails.
+# Prints the Cloudflare account id from the environment or Doppler, or prints a reason and fails.
 preflight_cloudflare_account_id_required() {
   local project=$1
   local config=$2
-  local account_id
-  account_id="$(preflight_cloudflare_account_id_resolved "${project}" "${config}" || true)"
+  local account_id="${CLOUDFLARE_ACCOUNT_ID:-}"
+  if [[ -z "${account_id}" ]] && preflight_doppler_project_exists "${project}"; then
+    account_id="$(doppler secrets get CLOUDFLARE_ACCOUNT_ID --plain -p "${project}" -c "${config}" 2>/dev/null || true)"
+  fi
   if [[ -z "${account_id}" ]]; then
     echo "Set CLOUDFLARE_ACCOUNT_ID or store CLOUDFLARE_ACCOUNT_ID in Doppler ${project}/${config} before bootstrap." >&2
     return 1
@@ -89,6 +63,7 @@ preflight_cloudflare_account_id_required() {
 }
 
 # Read-only validation of all inputs required before any Doppler project/config create.
+# Prints the resolved Cloudflare account id on success.
 preflight_bootstrap_inputs_readonly() {
   local project=$1
   local infra_config=$2
@@ -106,6 +81,7 @@ preflight_bootstrap_inputs_readonly() {
 
   account_id="$(preflight_cloudflare_account_id_required "${project}" "${infra_config}")" || return 1
   preflight_cloudflare_bootstrap_api_token "${CLOUDFLARE_API_TOKEN}" "${account_id}" || return 1
+  printf '%s' "${account_id}"
 }
 
 preflight_cloudflare_bootstrap_api_token() {

@@ -57,10 +57,8 @@ ensure_doppler_bootstrap_admin_config() {
   fi
 }
 
-preflight_bootstrap_inputs_readonly "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}" \
-  "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}" || exit 1
-
-ACCOUNT_ID="$(preflight_cloudflare_account_id_required "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}")"
+ACCOUNT_ID="$(preflight_bootstrap_inputs_readonly "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}" \
+  "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}")" || exit 1
 
 preflight_ensure_doppler_project_and_config "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}"
 ensure_doppler_bootstrap_admin_config
@@ -78,8 +76,8 @@ fi
 export TF_VAR_cloudflare_account_id="${ACCOUNT_ID}"
 export TF_VAR_state_bucket_name="${STATE_BUCKET_DEFAULT}"
 
-if ! doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE --plain \
-  -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}" >/dev/null 2>&1; then
+if bootstrap_doppler_secret_missing TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE \
+  "${DOPPLER_PROJECT_NAME}" "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}"; then
   BOOTSTRAP_PASS="$(openssl rand -base64 24)"
   confirm "Create TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE in Doppler (${DOPPLER_BOOTSTRAP_ADMIN_CONFIG})?"
   doppler_secret_set_stdin TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE "${BOOTSTRAP_PASS}" \
@@ -90,13 +88,13 @@ export TF_VAR_bootstrap_state_encryption_passphrase
 TF_VAR_bootstrap_state_encryption_passphrase="$(doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE --plain \
   -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}")"
 
-if ! doppler secrets get TOFU_STATE_ENCRYPTION_PASSPHRASE --plain -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" >/dev/null 2>&1; then
+if bootstrap_doppler_secret_missing TOFU_STATE_ENCRYPTION_PASSPHRASE "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}"; then
   RELEASE_PASS="$(openssl rand -base64 24)"
   confirm "Create TOFU_STATE_ENCRYPTION_PASSPHRASE in Doppler (${DOPPLER_INFRA_CONFIG})?"
   doppler_secret_set_stdin TOFU_STATE_ENCRYPTION_PASSPHRASE "${RELEASE_PASS}"
 fi
 
-echo "==> Bootstrap stack (R2 bucket + release scoped credentials; bootstrap state stays local)"
+echo "Bootstrap stack (R2 bucket + release scoped credentials; bootstrap state stays local)"
 confirm "Run tofu init/plan/apply for state-bootstrap (creates R2 bucket and release-scoped API token)?"
 
 cd "${BOOTSTRAP_DIR}"
@@ -144,7 +142,7 @@ skip_requesting_account_id  = true
 EOF
 '
 
-echo "==> Release environment stack"
+echo "Release environment stack"
 confirm "Run tofu init/plan/apply for release-environment (GitHub environment)?"
 
 cd "${RELEASE_DIR}"
@@ -152,11 +150,7 @@ export TF_VAR_state_encryption_passphrase
 TF_VAR_state_encryption_passphrase="$(doppler secrets get TOFU_STATE_ENCRYPTION_PASSPHRASE --plain -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}")"
 
 export GITHUB_TOKEN
-if [[ -n "${GITHUB_TOFU_RELEASE_ENV:-}" ]]; then
-  GITHUB_TOKEN="${GITHUB_TOFU_RELEASE_ENV}"
-else
-  GITHUB_TOKEN="$(doppler secrets get GITHUB_TOFU_RELEASE_ENV --plain -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}")"
-fi
+GITHUB_TOKEN="$(preflight_github_tofu_release_env_token "${DOPPLER_PROJECT_NAME}" "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}")"
 export RELEASE_PLAN
 
 doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c '
