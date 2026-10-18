@@ -1,11 +1,14 @@
 # shellcheck shell=bash
 # Sync required bootstrap inputs from environment into Doppler after project/config exist.
 
+# A secret that is absent, unreadable or empty counts as missing, so an empty value never passes.
 bootstrap_doppler_secret_missing() {
   local name=$1
   local project=$2
   local config=$3
-  ! doppler secrets get "${name}" --plain -p "${project}" -c "${config}" >/dev/null 2>&1
+  local value
+  value="$(doppler secrets get "${name}" --plain -p "${project}" -c "${config}" 2>/dev/null)" || return 0
+  [[ -z "${value}" ]]
 }
 
 bootstrap_sync_env_secrets_to_doppler() {

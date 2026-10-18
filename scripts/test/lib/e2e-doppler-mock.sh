@@ -18,9 +18,32 @@ write_log="${E2E_DOPPLER_WRITE_LOG:?}"
 secret_db="${E2E_DOPPLER_SECRET_DB:?}"
 curl_events="${E2E_CURL_EVENT_LOG:?}"
 
-# The token create probe is the last Cloudflare preflight call; no write may come before it.
-preflight_marker_ready() {
-  grep -Eq '^POST https://api\.cloudflare\.com/client/v4/accounts/[^/]+/tokens$' "${curl_events}" 2>/dev/null
+# No write may come before the GitHub token check or the last Cloudflare probe (token create).
+require_preflight() {
+  local what=$1
+  if ! grep -Eq '^GET https://api\.github\.com/user$' "${curl_events}" 2>/dev/null; then
+    echo "E2E FAIL: Doppler ${what} before GitHub token preflight" >&2
+    exit 1
+  fi
+  if ! grep -Eq '^POST https://api\.cloudflare\.com/client/v4/accounts/[^/]+/tokens$' "${curl_events}" 2>/dev/null; then
+    echo "E2E FAIL: Doppler ${what} before Cloudflare preflight finished" >&2
+    exit 1
+  fi
+}
+
+# Sets project and config from -p/-c (or long forms); args after -- land in rest.
+parse_scope() {
+  project=""
+  config=""
+  rest=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p|--project) project=$2; shift 2 ;;
+      -c|--config) config=$2; shift 2 ;;
+      --) shift; rest=("$@"); return 0 ;;
+      *) shift ;;
+    esac
+  done
 }
 
 cmd=${1:-}
@@ -40,10 +63,7 @@ case "${cmd}" in
       exit 1
     fi
     if [[ "${sub}" == "create" ]]; then
-      if ! preflight_marker_ready; then
-        echo "E2E FAIL: Doppler project create before Cloudflare preflight finished" >&2
-        exit 1
-      fi
+      require_preflight "project create"
       echo "created project" >>"${write_log}"
       exit 0
     fi
@@ -58,10 +78,7 @@ case "${cmd}" in
       exit 1
     fi
     if [[ "${sub}" == "create" ]]; then
-      if ! preflight_marker_ready; then
-        echo "E2E FAIL: Doppler config create before Cloudflare preflight finished" >&2
-        exit 1
-      fi
+      require_preflight "config create"
       cfg_name=${2:-}
       echo "config ${cfg_name} created" >>"${write_log}"
       exit 0
@@ -83,16 +100,7 @@ case "${cmd}" in
     if [[ "${sub}" == "get" ]]; then
       name=${2:-}
       shift 2 || true
-      project=""
-      config=""
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          -p|--project) project=$2; shift 2 ;;
-          -c|--config) config=$2; shift 2 ;;
-          --plain) shift ;;
-          *) shift ;;
-        esac
-      done
+      parse_scope "$@"
       line="$(awk -F '\t' -v n="${name}" -v p="${project}" -v c="${config}" \
         '$2 == n && $3 == p && $4 == c { last=$0 } END { print last }' "${secret_db}")"
       if [[ -z "${line}" ]]; then
@@ -102,21 +110,10 @@ case "${cmd}" in
       exit 0
     fi
     if [[ "${sub}" == "set" ]]; then
-      if ! preflight_marker_ready; then
-        echo "E2E FAIL: Doppler secret write before Cloudflare preflight finished" >&2
-        exit 1
-      fi
-      project=""
-      config=""
+      require_preflight "secret write"
       name=${2:-}
       shift 2 || true
-      while [[ $# -gt 0 ]]; do
-        case "$1" in
-          -p|--project) project=$2; shift 2 ;;
-          -c|--config) config=$2; shift 2 ;;
-          *) shift ;;
-        esac
-      done
+      parse_scope "$@"
       if [[ "${config}" == "bootstrap-admin" ]]; then
         case "${name}" in
           TOFU_BOOTSTRAP_*|GITHUB_TOFU_RELEASE_ENV) ;;
@@ -145,23 +142,14 @@ case "${cmd}" in
     fi
     ;;
   run)
-    project=""
-    config=""
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        -p|--project) project=$2; shift 2 ;;
-        -c|--config) config=$2; shift 2 ;;
-        --) shift; break ;;
-        *) shift ;;
-      esac
-    done
+    parse_scope "$@"
     # Like the real CLI, inject the config's secrets as environment variables.
     while IFS=$'\t' read -r _ name p c value; do
       if [[ "${p}" == "${project}" && "${c}" == "${config}" ]]; then
         export "${name}=${value}"
       fi
     done <"${secret_db}"
-    exec "$@"
+    exec "${rest[@]}"
     ;;
 esac
 echo "unexpected doppler: $*" >&2

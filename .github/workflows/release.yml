@@ -18,6 +18,8 @@ jobs:
     environment: release
     permissions:
       contents: write
+      actions: read
+      checks: read
     steps:
       # actions/checkout v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -32,6 +34,11 @@ jobs:
             echo "Version must match vMAJOR.MINOR.PATCH (got $VERSION)" >&2
             exit 1
           fi
+
+      - name: Require green CI and an approved release environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/release-gate.sh
 
       - name: Create tag and GitHub release
         env:

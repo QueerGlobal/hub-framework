@@ -264,10 +264,10 @@ The workflow runs in the GitHub Actions **release** environment (approval gate o
 
 To cut a release after the environment exists:
 
-1. Open **Actions → Release → Run workflow** on the branch you want to tag (usually `main`).
+1. Open the **Actions** tab, choose **Release**, then **Run workflow** on the branch you want to tag (usually `main`).
 2. Enter a semver tag such as `v1.2.3`.
 3. Approve the deployment if your account is a configured reviewer.
-4. The workflow validates the tag name, creates an annotated Git tag, pushes it, and opens a GitHub release with generated release notes.
+4. The workflow validates the tag name, then runs `scripts/release-gate.sh`. The gate stops the run unless every check on the commit passed (the Go `test` check is required) and the **release** environment requires a reviewer. It then creates an annotated Git tag, pushes it, and opens a GitHub release with generated release notes.
 
 The release job is the only job that requests `contents: write`; other workflows stay read-only.
 

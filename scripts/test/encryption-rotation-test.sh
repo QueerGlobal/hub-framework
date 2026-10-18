@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Real encrypted state: two-hop TF_ENCRYPTION rotation; metadata stays on original provider name.
+# Real encrypted state: Doppler-driven rotation with generated _NEXT; metadata stays on original provider name.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -11,11 +11,25 @@ else
   export TOFU=tofu
 fi
 WORKDIR="$(mktemp -d)"
+FAKE_BIN="${WORKDIR}/bin"
+DB="${WORKDIR}/doppler.tsv"
 trap 'rm -rf "${WORKDIR}"' EXIT
+mkdir -p "${FAKE_BIN}"
+: >"${DB}"
+
+# shellcheck source=scripts/test/lib/rotation-doppler-mock.sh
+source "${ROOT}/scripts/test/lib/rotation-doppler-mock.sh"
+rotation_doppler_mock_install "${FAKE_BIN}" "${DB}"
+export PATH="${FAKE_BIN}:${PATH}"
+export ROTATION_DOPPLER_DB="${DB}"
+export DOPPLER_PROJECT=hub-framework
+export DOPPLER_CONFIG=bootstrap-admin
 
 PASS_A='rotation-test-passphrase-a16'
 PASS_B='rotation-test-passphrase-b16'
 PASS_C='rotation-test-passphrase-c16'
+
+rotation_doppler_seed "${DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE hub-framework bootstrap-admin "${PASS_A}"
 
 cp "${FIXTURE}/variables.tf" "${FIXTURE}/main.tf" "${FIXTURE}/versions.tf" "${WORKDIR}/"
 
@@ -26,12 +40,26 @@ cp "${FIXTURE}/variables.tf" "${FIXTURE}/main.tf" "${FIXTURE}/versions.tf" "${WO
   "${TOFU}" apply -input=false -auto-approve >/dev/null
 )
 
-TOFU_ROTATE_OLD_PASSPHRASE="${PASS_A}" TOFU_ROTATE_NEW_PASSPHRASE="${PASS_B}" \
-  "${ROTATE}" "${WORKDIR}" bootstrap
+"${ROTATE}" "${WORKDIR}" bootstrap
+
+if ! grep -q $'\tTOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE\t' "${DB}"; then
+  echo "FAIL: rotation did not promote passphrase in Doppler mock" >&2
+  exit 1
+fi
+if grep -q $'\tTOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT\t' "${DB}"; then
+  echo "FAIL: _NEXT secret should be removed after promotion" >&2
+  exit 1
+fi
+
+NEW_IN_DOPPLER="$(awk -F '\t' '$2 == "TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE" { v=$5 } END { print v }' "${DB}")"
+if [[ "${NEW_IN_DOPPLER}" == "${PASS_A}" ]]; then
+  echo "FAIL: Doppler secret was not updated after rotation" >&2
+  exit 1
+fi
 
 (
   cd "${WORKDIR}"
-  export TF_VAR_passphrase="${PASS_B}"
+  export TF_VAR_passphrase="${NEW_IN_DOPPLER}"
   "${TOFU}" init -input=false >/dev/null
   if ! "${TOFU}" plan -input=false >/dev/null; then
     echo "FAIL: plan with new passphrase after rotation should succeed" >&2
@@ -55,19 +83,26 @@ if ! tofu_assert_state_method_metadata "${WORKDIR}/terraform.tfstate" bootstrap;
 fi
 echo "OK: state metadata on key_provider.pbkdf2.bootstrap after first rotation"
 
-TOFU_ROTATE_OLD_PASSPHRASE="${PASS_B}" TOFU_ROTATE_NEW_PASSPHRASE="${PASS_C}" \
-  "${ROTATE}" "${WORKDIR}" bootstrap
+rotation_doppler_seed "${DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE hub-framework bootstrap-admin "${NEW_IN_DOPPLER}"
+
+"${ROTATE}" "${WORKDIR}" bootstrap
+
+FINAL="$(awk -F '\t' '$2 == "TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE" { v=$5 } END { print v }' "${DB}")"
+if [[ "${FINAL}" == "${NEW_IN_DOPPLER}" ]]; then
+  echo "FAIL: second rotation did not change Doppler secret" >&2
+  exit 1
+fi
 
 (
   cd "${WORKDIR}"
-  export TF_VAR_passphrase="${PASS_C}"
+  export TF_VAR_passphrase="${FINAL}"
   "${TOFU}" init -input=false >/dev/null
   "${TOFU}" plan -input=false >/dev/null
 )
 
 (
   cd "${WORKDIR}"
-  export TF_VAR_passphrase="${PASS_B}"
+  export TF_VAR_passphrase="${NEW_IN_DOPPLER}"
   if "${TOFU}" plan -input=false >/dev/null 2>&1; then
     echo "FAIL: plan with superseded passphrase should fail after second rotation" >&2
     exit 1

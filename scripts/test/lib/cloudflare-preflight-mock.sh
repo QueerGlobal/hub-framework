@@ -21,6 +21,7 @@ args=("$@")
 idx=0
 want_http_code=0
 has_bearer=0
+fail_on_http=0
 while [[ ${idx} -lt ${#args[@]} ]]; do
   case "${args[$idx]}" in
     -X)
@@ -48,6 +49,10 @@ while [[ ${idx} -lt ${#args[@]} ]]; do
       ;;
     --data-binary)
       idx=$((idx + 2))
+      ;;
+    -f*|-[!-]*f*|--fail)
+      fail_on_http=1
+      idx=$((idx + 1))
       ;;
     http*|/*)
       url="${args[$idx]}"
@@ -131,13 +136,25 @@ if [[ "${method}" == "POST" && "${url}" == *"/accounts/"*"/tokens" && "${url}" !
   exit 1
 fi
 
-if [[ "${url}" == *"api.github.com/user"* ]]; then
-  if [[ "${GITHUB_MOCK_USER_OK:-1}" == 1 ]]; then
-    printf '%s\n' '{"login":"mock-github-user"}'
-    exit 0
-  fi
-  printf '%s\n' '{"message":"Bad credentials"}'
-  exit 0
+if [[ "${url}" == "https://api.github.com/user" ]]; then
+  case "${GITHUB_MOCK_USER:-ok}" in
+    ok)
+      printf '%s\n' '{"login":"mock-github-user"}'
+      exit 0
+      ;;
+    nologin)
+      printf '%s\n' '{}'
+      exit 0
+      ;;
+    401)
+      if [[ "${fail_on_http}" == 1 ]]; then
+        echo "curl: (22) The requested URL returned error: 401" >&2
+        exit 22
+      fi
+      printf '%s\n' '{"message":"Bad credentials"}'
+      exit 0
+      ;;
+  esac
 fi
 
 echo "unexpected curl: ${method} ${url}" >&2

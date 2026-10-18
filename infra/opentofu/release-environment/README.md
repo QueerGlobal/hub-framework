@@ -59,14 +59,12 @@ State and plan encryption use key provider **`state`** with `enforced = true`.
 
 ## Passphrase rotation
 
-Same two-hop `TF_ENCRYPTION` flow as bootstrap; provider name is **`state`**:
+Same two-hop `TF_ENCRYPTION` flow as bootstrap; provider name is **`state`**. The rotation script reads `TOFU_STATE_ENCRYPTION_PASSPHRASE` from Doppler `infra`, generates `_NEXT`, rotates, verifies the old passphrase fails, then promotes:
 
 ```bash
-TOFU_ROTATE_OLD_PASSPHRASE="${TOFU_STATE_ENCRYPTION_PASSPHRASE}" \
-TOFU_ROTATE_NEW_PASSPHRASE="${TOFU_STATE_ENCRYPTION_PASSPHRASE_NEXT}" \
-  ./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/release-environment state
+./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/release-environment state
 ```
 
-Then update `TOFU_STATE_ENCRYPTION_PASSPHRASE` in Doppler `infra` and clear `_NEXT`. Requires **OpenTofu 1.13.1+**. See `scripts/test/encryption-rotation-test.sh`.
+Requires **OpenTofu 1.13.1+**. See `scripts/test/encryption-rotation-test.sh` and `scripts/test/encryption-rotation-mutations-test.sh`.
 
 Copy and edit `terraform.tfvars.example` when you need non-default reviewers.
