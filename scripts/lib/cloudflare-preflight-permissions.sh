@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 # Read-only Cloudflare capability probes (no token policy or token list APIs).
 
-_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_CF_PERMISSIONS_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/curl-bearer-auth.sh
-source "${_LIB_DIR}/curl-bearer-auth.sh"
+source "${_CF_PERMISSIONS_LIB_DIR}/curl-bearer-auth.sh"
 
 preflight_cloudflare_response_success() {
   local body=$1

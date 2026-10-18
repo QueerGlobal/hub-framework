@@ -15,12 +15,17 @@ if grep -qE 'AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY' "${INFRA_YML}"; then
   exit 1
 fi
 
-if ! grep -q 'doppler-ci-runtime-guard.sh' "${INFRA_YML}"; then
-  echo "FAIL: infra workflow must run doppler-ci-runtime-guard when DOPPLER_TOKEN is set" >&2
+if ! grep -q 'uses: dopplerhq/cli-action@' "${INFRA_YML}"; then
+  echo "FAIL: infra workflow must install the Doppler CLI before the bootstrap-admin guard" >&2
   exit 1
 fi
 
-DOPPLER_CI_ALLOW_UNSET_TOKEN=1 "${ROOT}/scripts/test/doppler-ci-runtime-guard-test.sh"
+if ! grep -q 'scripts/doppler-ci-guard.sh' "${INFRA_YML}"; then
+  echo "FAIL: infra workflow must run scripts/doppler-ci-guard.sh" >&2
+  exit 1
+fi
+
+"${ROOT}/scripts/test/doppler-ci-runtime-guard-test.sh"
 "${ROOT}/scripts/test/doppler-ci-scope-test.sh"
 
 echo "OK: CI workflow and infra-scoped Doppler token cannot read bootstrap-admin"

@@ -6,6 +6,8 @@ _PREFLIGHT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${_PREFLIGHT_LIB_DIR}/cloudflare-preflight-permissions.sh"
 # shellcheck source=scripts/lib/cloudflare-account-token-write-probe.sh
 source "${_PREFLIGHT_LIB_DIR}/cloudflare-account-token-write-probe.sh"
+# shellcheck source=scripts/lib/github-preflight.sh
+source "${_PREFLIGHT_LIB_DIR}/github-preflight.sh"
 
 preflight_require_commands() {
   local c
@@ -55,20 +57,6 @@ preflight_doppler_secret_exists() {
   fi
 }
 
-preflight_github_tofu_release_env() {
-  local project=$1
-  local bootstrap_admin_config=$2
-  if [[ -n "${GITHUB_TOFU_RELEASE_ENV:-}" ]]; then
-    return 0
-  fi
-  if preflight_doppler_project_exists "${project}"; then
-    preflight_doppler_secret_exists GITHUB_TOFU_RELEASE_ENV "${project}" "${bootstrap_admin_config}"
-    return $?
-  fi
-  echo "Set GITHUB_TOFU_RELEASE_ENV in the environment, or store it in Doppler ${project}/${bootstrap_admin_config} before bootstrap." >&2
-  return 1
-}
-
 preflight_cloudflare_account_id_resolved() {
   local project=$1
   local config=$2
@@ -87,7 +75,8 @@ preflight_cloudflare_account_id_resolved() {
   return 1
 }
 
-preflight_cloudflare_account_id_readonly() {
+# Returns configured Cloudflare account id or prints a reason and fails.
+preflight_cloudflare_account_id_required() {
   local project=$1
   local config=$2
   local account_id
@@ -96,6 +85,7 @@ preflight_cloudflare_account_id_readonly() {
     echo "Set CLOUDFLARE_ACCOUNT_ID or store CLOUDFLARE_ACCOUNT_ID in Doppler ${project}/${config} before bootstrap." >&2
     return 1
   fi
+  printf '%s' "${account_id}"
 }
 
 # Read-only validation of all inputs required before any Doppler project/config create.
@@ -103,67 +93,19 @@ preflight_bootstrap_inputs_readonly() {
   local project=$1
   local infra_config=$2
   local bootstrap_admin_config=$3
+  local account_id
 
   preflight_doppler_logged_in || return 1
+
+  preflight_github_tofu_release_env "${project}" "${bootstrap_admin_config}" || return 1
 
   if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
     echo "Set CLOUDFLARE_API_TOKEN (see infra/opentofu/state-bootstrap/README.md)." >&2
     return 1
   fi
 
-  preflight_cloudflare_account_id_readonly "${project}" "${infra_config}" || return 1
-
-  local account_id
-  account_id="$(preflight_cloudflare_account_id_resolved "${project}" "${infra_config}")"
+  account_id="$(preflight_cloudflare_account_id_required "${project}" "${infra_config}")" || return 1
   preflight_cloudflare_bootstrap_api_token "${CLOUDFLARE_API_TOKEN}" "${account_id}" || return 1
-
-  preflight_github_tofu_release_env "${project}" "${bootstrap_admin_config}" || return 1
-}
-
-preflight_cloudflare_account_id() {
-  local account_id=$1
-  if [[ -z "${account_id}" ]]; then
-    echo "Set CLOUDFLARE_ACCOUNT_ID or store CLOUDFLARE_ACCOUNT_ID in Doppler." >&2
-    return 1
-  fi
-}
-
-preflight_cloudflare_verify_token_id() {
-  local token=$1
-  local account_id=$2
-  local verify token_id
-
-  verify="$(curl_with_bearer "${token}" \
-    "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/verify" 2>/dev/null || true)"
-  if [[ "$(echo "${verify}" | jq -r '.success // false')" == "true" ]]; then
-    preflight_cloudflare_verify_result_active "${verify}" || return 1
-    local verify_account_id
-    verify_account_id="$(echo "${verify}" | jq -r '.result.account.id // empty')"
-    if [[ -n "${verify_account_id}" && "${verify_account_id}" != "${account_id}" ]]; then
-      echo "Cloudflare token verify is for account ${verify_account_id}, not configured account ${account_id}." >&2
-      return 1
-    fi
-    token_id="$(echo "${verify}" | jq -r '.result.id // empty')"
-    if [[ -n "${token_id}" ]]; then
-      printf '%s' "${token_id}"
-      return 0
-    fi
-  fi
-
-  verify="$(curl_with_bearer "${token}" \
-    "https://api.cloudflare.com/client/v4/user/tokens/verify" 2>/dev/null || true)"
-  if [[ "$(echo "${verify}" | jq -r '.success // false')" != "true" ]]; then
-    echo "Cloudflare token verify failed for account and user verify endpoints." >&2
-    return 1
-  fi
-
-  preflight_cloudflare_verify_result_active "${verify}" || return 1
-  token_id="$(echo "${verify}" | jq -r '.result.id // empty')"
-  if [[ -z "${token_id}" ]]; then
-    echo "Cloudflare user token verify did not return a token id." >&2
-    return 1
-  fi
-  printf '%s' "${token_id}"
 }
 
 preflight_cloudflare_bootstrap_api_token() {
@@ -188,14 +130,4 @@ preflight_cloudflare_bootstrap_api_token() {
   preflight_cloudflare_capability_r2_list_buckets "${token}" "${account_id}" || return 1
   preflight_cloudflare_capability_token_permission_groups "${token}" "${account_id}" || return 1
   cloudflare_account_token_write_probe "${token}" "${account_id}" || return 1
-}
-
-preflight_cloudflare_api_token() {
-  local token=$1
-  local account_id=$2
-
-  preflight_cloudflare_verify_token_id "${token}" "${account_id}" >/dev/null || return 1
-
-  preflight_cloudflare_capability_r2_list_buckets "${token}" "${account_id}" || return 1
-  preflight_cloudflare_capability_token_permission_groups "${token}" "${account_id}" || return 1
 }

@@ -3,25 +3,24 @@
 
 cloudflare_preflight_mock_install() {
   local fake_bin=$1
+  local shim_log_lib
+  shim_log_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/argv-shim-log.sh"
   mkdir -p "${fake_bin}"
 
-  cat > "${fake_bin}/curl" <<'MOCK'
+  cat > "${fake_bin}/curl" <<MOCK
 #!/usr/bin/bash
 set -euo pipefail
-if [[ -n "${ARGV_SHIM_LOG:-}" ]]; then
-  {
-    printf 'SHIM:curl ARGV:'
-    printf '%q ' "$@"
-    printf '\n'
-    tr '\0' ' ' < /proc/self/cmdline
-    printf '\n'
-  } >> "${ARGV_SHIM_LOG}"
-fi
+# shellcheck source=scripts/test/lib/argv-shim-log.sh
+source "${shim_log_lib}"
+argv_shim_log_invocation curl "\$@"
+MOCK
+  cat >> "${fake_bin}/curl" <<'MOCK'
 url=""
 method="GET"
 args=("$@")
 idx=0
 want_http_code=0
+has_bearer=0
 while [[ ${idx} -lt ${#args[@]} ]]; do
   case "${args[$idx]}" in
     -X)
@@ -29,6 +28,13 @@ while [[ ${idx} -lt ${#args[@]} ]]; do
       idx=$((idx + 2))
       ;;
     -H)
+      header="${args[$((idx + 1))]:-}"
+      if [[ "${header}" == "@-" ]]; then
+        header="$(cat)"
+      fi
+      if [[ "${header}" == "Authorization: Bearer "?* ]]; then
+        has_bearer=1
+      fi
       idx=$((idx + 2))
       ;;
     -o)
@@ -55,19 +61,18 @@ done
 if [[ -z "${url}" ]]; then
   url="${@: -1}"
 fi
-emit_http() {
-  local code=$1
-  if [[ "${want_http_code}" == 1 ]]; then
-    printf '%s' "${code}"
-    exit 0
-  fi
-}
+if [[ "${has_bearer}" != 1 ]]; then
+  echo "curl mock: request to ${url} carried no bearer token" >&2
+  exit 1
+fi
+if [[ -n "${E2E_CURL_EVENT_LOG:-}" ]]; then
+  printf '%s %s\n' "${method}" "${url}" >> "${E2E_CURL_EVENT_LOG}"
+fi
 fixture_root="${CF_PREFLIGHT_FIXTURE_ROOT:?}"
 
 r2_list_ok=${CF_MOCK_R2_OK:-1}
-r2_write_ok=${CF_MOCK_R2_WRITE_OK:-1}
-user_verify_ok=${CF_MOCK_USER_VERIFY_OK:-1}
 account_verify_ok=${CF_MOCK_ACCOUNT_VERIFY_OK:-1}
+token_create_http=${CF_MOCK_TOKEN_CREATE_HTTP:-400}
 account_verify_http=${CF_MOCK_ACCOUNT_VERIFY_HTTP:-}
 catalog_ok=${CF_MOCK_CATALOG_OK:-1}
 verify_status=${CF_MOCK_VERIFY_STATUS:-active}
@@ -95,24 +100,6 @@ if [[ "${url}" == *"/accounts/"*"/tokens/verify" ]]; then
   exit 0
 fi
 
-if [[ "${url}" == *"/user/tokens/verify" ]]; then
-  if [[ "${user_verify_ok}" == 1 ]]; then
-    verify_body "user-owned-token-id"
-    exit 0
-  fi
-  printf '%s\n' '{"success":false,"errors":[{"code":1000,"message":"Invalid user token"}],"messages":[],"result":null}'
-  exit 0
-fi
-
-if [[ "${method}" == "POST" && "${url}" == *"/r2/buckets" && "${url}" != *"?"* ]]; then
-  if [[ "${r2_write_ok}" == 1 ]]; then
-    printf '%s\n' '{"success":true,"errors":[],"messages":[],"result":{}}'
-    exit 0
-  fi
-  echo "forbidden" >&2
-  exit 403
-fi
-
 if [[ "${url}" == *"/r2/buckets"* ]]; then
   if [[ "${r2_list_ok}" == 1 ]]; then
     printf '%s\n' '{"success":true,"errors":[],"messages":[],"result":{"buckets":[],"count":0}}'
@@ -132,11 +119,24 @@ if [[ "${url}" == *"/tokens/permission_groups"* ]]; then
 fi
 
 if [[ "${method}" == "POST" && "${url}" == *"/accounts/"*"/tokens" && "${url}" != *"/tokens/verify"* ]]; then
+  if [[ "${CF_MOCK_OMIT_TOKEN_PROBE:-}" == "1" ]]; then
+    echo "unexpected curl: token create probe disabled in mock" >&2
+    exit 1
+  fi
   if [[ "${want_http_code}" == 1 ]]; then
-    printf '400'
+    printf '%s' "${token_create_http}"
     exit 0
   fi
-  printf '%s\n' '{"success":false,"errors":[{"code":1000,"message":"invalid token body"}],"messages":[],"result":null}'
+  echo "token create probe must request the HTTP status code" >&2
+  exit 1
+fi
+
+if [[ "${url}" == *"api.github.com/user"* ]]; then
+  if [[ "${GITHUB_MOCK_USER_OK:-1}" == 1 ]]; then
+    printf '%s\n' '{"login":"mock-github-user"}'
+    exit 0
+  fi
+  printf '%s\n' '{"message":"Bad credentials"}'
   exit 0
 fi
 
@@ -166,7 +166,7 @@ cloudflare_preflight_run_preflight() {
         export "${kv?}"
       done
       source "${root}/scripts/lib/preflight.sh"
-      preflight_cloudflare_api_token "mock-token" "00000000000000000000000000000001"
+      preflight_cloudflare_bootstrap_api_token "mock-token" "00000000000000000000000000000001"
     ) 2>&1
   )" || rc=$?
   rm -rf "${testdir}"

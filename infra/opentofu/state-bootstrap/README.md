@@ -13,9 +13,9 @@ Export an **account-owned** `CLOUDFLARE_API_TOKEN` before running `scripts/boots
 1. **Account verify** (required): `GET /accounts/{account_id}/tokens/verify` must succeed. User-level tokens are rejected.
 2. **R2 list buckets**: `GET /accounts/{account_id}/r2/buckets?per_page=1` (proves account-scoped R2 access; does **not** prove Workers R2 Storage Write).
 3. **Permission groups catalog read**: `GET /accounts/{account_id}/tokens/permission_groups?per_page=1` (same catalog read as `data.cloudflare_account_api_token_permission_groups`). Requires **Account API Tokens Write** (or Read) on the bootstrap token; effective deny surfaces as HTTP **403**.
-4. **Token create probe**: invalid `POST /accounts/{account_id}/tokens` (fail-fast if **Account API Tokens Write** is missing). A GET on account tokens is **not** used as proof of Write.
+4. **Token create probe**: `POST /accounts/{account_id}/tokens` with an invalid body. HTTP 400 or 422 passes, 401 or 403 fails because **Account API Tokens Write** is missing, and any 2xx fails because a token may have been created. A GET on account tokens is **not** used as proof of Write.
 
-**Workers R2 Storage Write** cannot be proven read-only. Preflight may pass with R2 list access only; the **first OpenTofu apply** fails closed when creating the bucket or account token if Write is missing. See `scripts/test/cloudflare-r2-write-fails-closed-test.sh`.
+**Workers R2 Storage Write** cannot be proven read-only. Preflight may pass with R2 list access only; the **first OpenTofu apply** stops with a provider error when creating the bucket if Write is missing.
 
 Dashboard: **Workers R2 Storage Write** and **Account API Tokens Write** at account scope (API names use **Write**, not dashboard "Edit").
 
@@ -24,7 +24,7 @@ Dashboard: **Workers R2 Storage Write** and **Account API Tokens Write** at acco
 | Config | Purpose | CI |
 | --- | --- | --- |
 | `infra` | Release stack remote state, release passphrases, `DOPPLER_CI_INFRA_SERVICE_TOKEN` | `DOPPLER_TOKEN` must be a service token scoped to **infra** only |
-| `bootstrap-admin` | Bootstrap passphrases, `GITHUB_TOFU_RELEASE_ENV`, `TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP` | Must not be readable from CI (`scripts/test/doppler-ci-runtime-guard.sh`) |
+| `bootstrap-admin` | Bootstrap passphrases, `GITHUB_TOFU_RELEASE_ENV`, `TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP` | Must not be readable from CI (`scripts/doppler-ci-guard.sh`) |
 
 Release R2 credentials in `infra` cannot overwrite bootstrap state because bootstrap state is **not** stored under those credentials on R2.
 
