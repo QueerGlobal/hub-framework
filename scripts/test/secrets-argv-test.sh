@@ -2,6 +2,8 @@
 # Secrets must not appear on child argv (preflight curl, rotation, full bootstrap).
 set -euo pipefail
 
+unset ARGV_SHIM_TOFU_TEST_MODE ARGV_SHIM_TOFU_MOCK_OUTPUT
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=scripts/test/lib/argv-logging-shims.sh
 source "${ROOT}/scripts/test/lib/argv-logging-shims.sh"
@@ -99,15 +101,18 @@ rotation_doppler_seed "${ROT_DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE hub
 export ROTATION_DOPPLER_DB="${ROT_DB}" DOPPLER_PROJECT=hub-framework DOPPLER_CONFIG=bootstrap-admin
 mkdir -p "${WORKDIR}/stack"
 cp "${FIXTURE}/variables.tf" "${FIXTURE}/main.tf" "${FIXTURE}/versions.tf" "${WORKDIR}/stack/"
-export TOFU=tofu
-( cd "${WORKDIR}/stack" && TF_VAR_passphrase="${PASS_A}" tofu init -input=false >/dev/null \
-  && TF_VAR_passphrase="${PASS_A}" tofu apply -input=false -auto-approve >/dev/null )
+REAL_TOFU="$(PATH="/usr/local/bin:/usr/bin:/bin" command -v tofu)"
+export TOFU="${REAL_TOFU}"
+( cd "${WORKDIR}/stack" && TF_VAR_passphrase="${PASS_A}" "${REAL_TOFU}" init -input=false >/dev/null \
+  && TF_VAR_passphrase="${PASS_A}" "${REAL_TOFU}" apply -input=false -auto-approve >/dev/null )
 : >"${ARGV_LOG}"
 "${ROOT}/scripts/tofu-rotate-encryption-passphrase.sh" "${WORKDIR}/stack" bootstrap >/dev/null
 argv_shim_assert_no_secrets "${ARGV_LOG}" "rotation" "${SECRETS[@]}"
 echo "OK: rotation keeps passphrases off argv"
 
 # Segment 3: full bootstrap (doppler run bodies, tofu, curl) with test-mode tofu.
+e2e_doppler_mock_install "${SHIM_BIN}"
+export DOPPLER_PROJECT=hub-framework DOPPLER_CONFIG=infra
 export ARGV_SHIM_TOFU_TEST_MODE=1
 export ARGV_SHIM_TOFU_MOCK_OUTPUT=1
 CLONE_DIR="${WORKDIR}/repo-clone"
