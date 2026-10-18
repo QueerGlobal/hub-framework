@@ -20,13 +20,23 @@ source "${ROOT}/scripts/lib/bootstrap-backend-mode.sh"
 source "${ROOT}/scripts/lib/doppler-ci-token.sh"
 # shellcheck source=scripts/lib/bootstrap-doppler-sync.sh
 source "${ROOT}/scripts/lib/bootstrap-doppler-sync.sh"
+# shellcheck source=scripts/lib/release-backend-mode.sh
+source "${ROOT}/scripts/lib/release-backend-mode.sh"
 
 install_plan_file_trap
+
+BOOTSTRAP_RUNTIME_DIR="$(mktemp -d)"
+BOOTSTRAP_PREFLIGHT_MARKER="${BOOTSTRAP_RUNTIME_DIR}/preflight-complete"
+export BOOTSTRAP_PREFLIGHT_MARKER_PATH="${BOOTSTRAP_PREFLIGHT_MARKER}"
 
 BOOTSTRAP_DIR="${ROOT}/infra/opentofu/state-bootstrap"
 bootstrap_exit_cleanup() {
   cleanup_plan_files
   bootstrap_backend_disable_s3 "${BOOTSTRAP_DIR}"
+  if [[ "${BOOTSTRAP_E2E:-}" == "1" ]]; then
+    release_backend_disable_local "${RELEASE_DIR}"
+  fi
+  rm -rf "${BOOTSTRAP_RUNTIME_DIR}"
 }
 trap bootstrap_exit_cleanup EXIT
 
@@ -60,7 +70,7 @@ require_cmd tofu doppler curl jq openssl
 export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
 
 preflight_bootstrap_inputs_readonly "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}" || exit 1
-export BOOTSTRAP_PREFLIGHT_COMPLETE=1
+: >"${BOOTSTRAP_PREFLIGHT_MARKER}"
 
 ACCOUNT_ID="$(preflight_cloudflare_account_id_resolved "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}")"
 preflight_cloudflare_account_id "${ACCOUNT_ID}"
@@ -126,30 +136,19 @@ else
 fi
 
 if [[ "${BOOTSTRAP_E2E:-}" == "1" ]]; then
-  echo "==> Release environment stack (E2E init path only)"
+  echo "==> Release environment stack (E2E local backend init)"
   cd "${RELEASE_DIR}"
   export TF_VAR_state_encryption_passphrase="${TF_VAR_bootstrap_state_encryption_passphrase}"
   export TF_VAR_state_encryption_passphrase_legacy="${TF_VAR_bootstrap_state_encryption_passphrase_legacy}"
   export GITHUB_TOKEN="${GITHUB_TOFU_RELEASE_ENV:-e2e-mock-github-token}"
-  cat > "${RELEASE_DIR}/backend-config.hcl" <<EOF
-bucket                      = "e2e-mock-bucket"
-key                         = "${RELEASE_STATE_KEY}"
-region                      = "auto"
-endpoint                    = "https://example.r2.cloudflarestorage.com"
-encrypt                     = true
-use_lockfile                = true
-skip_credentials_validation = true
-skip_region_validation      = true
-skip_requesting_account_id  = true
-EOF
+  release_backend_enable_local "${RELEASE_DIR}"
   export TF_VAR_state_encryption_passphrase
   export TF_VAR_state_encryption_passphrase_legacy
   doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c "
     export GITHUB_TOKEN=\"${GITHUB_TOKEN}\"
     export TF_VAR_state_encryption_passphrase=\"${TF_VAR_state_encryption_passphrase}\"
     export TF_VAR_state_encryption_passphrase_legacy=\"${TF_VAR_state_encryption_passphrase_legacy}\"
-    tofu init -input=false -backend-config=backend-config.hcl -reconfigure || \
-      tofu init -input=false -backend=false -reconfigure
+    tofu init -input=false -reconfigure
     tofu validate
   "
   echo "Done (E2E). Preflight, Doppler split, bootstrap tofu test, and release init path succeeded."

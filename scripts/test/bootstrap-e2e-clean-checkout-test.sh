@@ -29,7 +29,11 @@ cat > "${FAKE_BIN}/doppler" <<'DOPPLER'
 set -euo pipefail
 write_log="${E2E_DOPPLER_WRITE_LOG:?}"
 secret_db="${E2E_DOPPLER_SECRET_DB:?}"
-preflight_done="${BOOTSTRAP_PREFLIGHT_COMPLETE:-}"
+preflight_marker="${BOOTSTRAP_PREFLIGHT_MARKER_PATH:-}"
+
+preflight_marker_ready() {
+  [[ -n "${preflight_marker}" && -f "${preflight_marker}" ]]
+}
 
 cmd=${1:-}
 shift || true
@@ -48,8 +52,8 @@ case "${cmd}" in
       exit 1
     fi
     if [[ "${sub}" == "create" ]]; then
-      if [[ "${preflight_done}" != "1" ]]; then
-        echo "E2E FAIL: Doppler project create before preflight complete" >&2
+      if ! preflight_marker_ready; then
+        echo "E2E FAIL: Doppler project create before preflight marker file" >&2
         exit 1
       fi
       echo "created project" >>"${write_log}"
@@ -66,8 +70,8 @@ case "${cmd}" in
       exit 1
     fi
     if [[ "${sub}" == "create" ]]; then
-      if [[ "${preflight_done}" != "1" ]]; then
-        echo "E2E FAIL: Doppler config create before preflight complete" >&2
+      if ! preflight_marker_ready; then
+        echo "E2E FAIL: Doppler config create before preflight marker file" >&2
         exit 1
       fi
       cfg_name=${2:-}
@@ -110,8 +114,8 @@ case "${cmd}" in
       exit 0
     fi
     if [[ "${sub}" == "set" ]]; then
-      if [[ "${preflight_done}" != "1" ]]; then
-        echo "E2E FAIL: Doppler secret write before preflight complete" >&2
+      if ! preflight_marker_ready; then
+        echo "E2E FAIL: Doppler secret write before preflight marker file" >&2
         exit 1
       fi
       project=""
@@ -172,6 +176,16 @@ export CLOUDFLARE_ACCOUNT_ID=00000000000000000000000000000001
 export GITHUB_TOFU_RELEASE_ENV=e2e-mock-github-token
 export BOOTSTRAP_AUTO_CONFIRM=1
 export BOOTSTRAP_E2E=1
+
+# Preset legacy env must not bypass the marker file gate.
+export BOOTSTRAP_PREFLIGHT_COMPLETE=1
+export BOOTSTRAP_PREFLIGHT_MARKER_PATH="${TESTDIR}/preset-env-not-a-real-marker"
+if PATH="${FAKE_BIN}:${PATH}" E2E_DOPPLER_WRITE_LOG="${WRITE_LOG}" E2E_DOPPLER_SECRET_DB="${SECRET_DB}" \
+  doppler projects create hub-framework --project hub-framework 2>/dev/null; then
+  echo "FAIL: preset BOOTSTRAP_PREFLIGHT_COMPLETE must not satisfy Doppler write gate" >&2
+  exit 1
+fi
+echo "OK: preset env var does not bypass preflight marker file gate"
 export BOOTSTRAP_DOPPLER_SECRET_DRY_RUN=0
 export CF_MOCK_USER_VERIFY_OK=1
 export CF_MOCK_USER_DETAILS_OK=1
@@ -181,11 +195,6 @@ export CF_MOCK_DETAILS_FIXTURE=token-details-account-owned-allow.json
   cd "${CLONE_DIR}"
   ./scripts/bootstrap-release-infra.sh
 )
-
-if ! grep -q 'e2e-mock-bucket' "${CLONE_DIR}/infra/opentofu/release-environment/backend-config.hcl" 2>/dev/null; then
-  echo "FAIL: E2E did not write release backend-config.hcl" >&2
-  exit 1
-fi
 
 if ! grep -q 'secret set GITHUB_TOFU_RELEASE_ENV' "${WRITE_LOG}"; then
   echo "FAIL: E2E did not write GITHUB_TOFU_RELEASE_ENV to infra after create" >&2

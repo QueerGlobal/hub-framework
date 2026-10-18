@@ -125,35 +125,15 @@ preflight_cloudflare_account_id() {
   fi
 }
 
-preflight_cloudflare_fetch_token_details() {
-  local token=$1
-  local account_id=$2
-  local token_id=$3
-  local details=""
-  if details="$(curl -fsS -H "Authorization: Bearer ${token}" \
-    "https://api.cloudflare.com/client/v4/user/tokens/${token_id}" 2>/dev/null)" \
-    && [[ "$(echo "${details}" | jq -r '.success')" == "true" ]]; then
-    echo "${details}"
-    return 0
-  fi
-  if details="$(curl -fsS -H "Authorization: Bearer ${token}" \
-    "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/${token_id}" 2>/dev/null)" \
-    && [[ "$(echo "${details}" | jq -r '.success')" == "true" ]]; then
-    echo "${details}"
-    return 0
-  fi
-  echo "Cloudflare token details failed for user and account token endpoints (need User API Tokens Read or Account API Tokens Read)." >&2
-  return 1
-}
-
 preflight_cloudflare_verify_token_id() {
   local token=$1
   local account_id=$2
   local verify token_id
 
   verify="$(curl -fsS -H "Authorization: Bearer ${token}" \
-    "https://api.cloudflare.com/client/v4/user/tokens/verify" 2>/dev/null || true)"
+    "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/verify" 2>/dev/null || true)"
   if [[ "$(echo "${verify}" | jq -r '.success // false')" == "true" ]]; then
+    preflight_cloudflare_verify_result_active "${verify}" || return 1
     token_id="$(echo "${verify}" | jq -r '.result.id // empty')"
     if [[ -n "${token_id}" ]]; then
       printf '%s' "${token_id}"
@@ -162,15 +142,16 @@ preflight_cloudflare_verify_token_id() {
   fi
 
   verify="$(curl -fsS -H "Authorization: Bearer ${token}" \
-    "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/verify" 2>/dev/null || true)"
+    "https://api.cloudflare.com/client/v4/user/tokens/verify" 2>/dev/null || true)"
   if [[ "$(echo "${verify}" | jq -r '.success // false')" != "true" ]]; then
-    echo "Cloudflare token verify failed for user and account verify endpoints." >&2
+    echo "Cloudflare token verify failed for account and user verify endpoints." >&2
     return 1
   fi
 
+  preflight_cloudflare_verify_result_active "${verify}" || return 1
   token_id="$(echo "${verify}" | jq -r '.result.id // empty')"
   if [[ -z "${token_id}" ]]; then
-    echo "Cloudflare account token verify did not return a token id." >&2
+    echo "Cloudflare user token verify did not return a token id." >&2
     return 1
   fi
   printf '%s' "${token_id}"
@@ -179,28 +160,9 @@ preflight_cloudflare_verify_token_id() {
 preflight_cloudflare_api_token() {
   local token=$1
   local account_id=$2
-  local token_id details catalog
-  local r2_write_id api_tokens_write_id
 
-  token_id="$(preflight_cloudflare_verify_token_id "${token}" "${account_id}")" || return 1
+  preflight_cloudflare_verify_token_id "${token}" "${account_id}" >/dev/null || return 1
 
   preflight_cloudflare_capability_r2_list_buckets "${token}" "${account_id}" || return 1
-  preflight_cloudflare_capability_list_account_tokens "${token}" "${account_id}" || return 1
-
-  catalog="$(preflight_cloudflare_fetch_permission_groups_catalog "${token}" "${account_id}")" || return 1
-  r2_write_id="$(preflight_cloudflare_catalog_permission_id "${catalog}" \
-    "${PREFLIGHT_CF_PERM_R2_STORAGE_WRITE_NAME}")"
-  api_tokens_write_id="$(preflight_cloudflare_catalog_permission_id "${catalog}" \
-    "${PREFLIGHT_CF_PERM_ACCOUNT_API_TOKENS_WRITE_NAME}")"
-  if [[ -z "${r2_write_id}" || -z "${api_tokens_write_id}" ]]; then
-    echo "Cloudflare permission catalog missing ${PREFLIGHT_CF_PERM_R2_STORAGE_WRITE_NAME} or ${PREFLIGHT_CF_PERM_ACCOUNT_API_TOKENS_WRITE_NAME}." >&2
-    return 1
-  fi
-
-  if details="$(preflight_cloudflare_fetch_token_details "${token}" "${account_id}" "${token_id}")"; then
-    preflight_cloudflare_token_has_allow_permission_ids "${details}" \
-      "${r2_write_id}" "${api_tokens_write_id}" || return 1
-  else
-    echo "Note: skipping token policy ID probe (grant User API Tokens Read or Account API Tokens Read to enable)." >&2
-  fi
+  preflight_cloudflare_capability_token_permission_groups "${token}" "${account_id}" || return 1
 }

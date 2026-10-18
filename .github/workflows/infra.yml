@@ -91,6 +91,9 @@ jobs:
       - name: Cloudflare preflight mutation tests
         run: scripts/test/cloudflare-preflight-mutations-test.sh
 
+      - name: Cloudflare R2 write fails closed test
+        run: scripts/test/cloudflare-r2-write-fails-closed-test.sh
+
       - name: Encryption rotation test
         run: scripts/test/encryption-rotation-test.sh
 
@@ -112,6 +115,8 @@ jobs:
             scripts/lib/doppler-ci-token.sh \
             scripts/lib/cloudflare-preflight-permissions.sh \
             scripts/lib/bootstrap-doppler-sync.sh \
+            scripts/lib/release-backend-mode.sh \
+            scripts/lib/cloudflare-r2-first-write.sh \
             scripts/test/doppler-secrets-test.sh \
             scripts/test/doppler-ci-isolation-test.sh \
             scripts/test/doppler-ci-scope-test.sh \
@@ -121,6 +126,8 @@ jobs:
             scripts/test/cloudflare-preflight-test.sh \
             scripts/test/cloudflare-preflight-account-token-test.sh \
             scripts/test/cloudflare-preflight-mutations-test.sh \
+            scripts/test/cloudflare-r2-write-fails-closed-test.sh \
+            scripts/test/doppler-ci-runtime-guard-test.sh \
             scripts/test/bootstrap-e2e-clean-checkout-test.sh \
             scripts/test/bootstrap-backend-restore-test.sh
 

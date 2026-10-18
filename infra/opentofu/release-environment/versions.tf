@@ -1,8 +1,6 @@
 terraform {
   required_version = ">= 1.10.0"
 
-  backend "s3" {}
-
   encryption {
     key_provider "pbkdf2" "state" {
       passphrase = var.state_encryption_passphrase_legacy

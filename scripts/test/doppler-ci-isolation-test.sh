@@ -20,6 +20,7 @@ if ! grep -q 'doppler-ci-runtime-guard.sh' "${INFRA_YML}"; then
   exit 1
 fi
 
+DOPPLER_CI_ALLOW_UNSET_TOKEN=1 "${ROOT}/scripts/test/doppler-ci-runtime-guard-test.sh"
 "${ROOT}/scripts/test/doppler-ci-scope-test.sh"
 
 echo "OK: CI workflow and infra-scoped Doppler token cannot read bootstrap-admin"

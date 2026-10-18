@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mutation-proves each Cloudflare preflight gate (break one check, expect failure).
+# Mutation-proves each Cloudflare capability probe (break one probe, expect failure).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -27,32 +27,23 @@ assert_passes() {
 }
 
 BASE=(
-  CF_MOCK_USER_VERIFY_OK=0
   CF_MOCK_ACCOUNT_VERIFY_OK=1
-  CF_MOCK_ACCOUNT_DETAILS_OK=1
-  CF_MOCK_DETAILS_FIXTURE=token-details-account-owned-allow.json
+  CF_MOCK_USER_VERIFY_OK=0
+  CF_MOCK_VERIFY_STATUS=active
 )
 
-assert_passes "full account-owned token" "${BASE[@]}"
+assert_passes "account verify and capability probes" "${BASE[@]}"
 
 assert_fails "both verify endpoints fail" \
-  "${BASE[@]}" CF_MOCK_ACCOUNT_VERIFY_OK=0
+  "${BASE[@]}" CF_MOCK_ACCOUNT_VERIFY_OK=0 CF_MOCK_USER_VERIFY_OK=0
 
-assert_fails "R2 list capability missing" \
+assert_fails "inactive token status" \
+  "${BASE[@]}" CF_MOCK_VERIFY_STATUS=disabled
+
+assert_fails "R2 list probe skipped" \
   "${BASE[@]}" CF_MOCK_R2_OK=0
 
-assert_fails "account tokens list capability missing" \
-  "${BASE[@]}" CF_MOCK_TOKENS_LIST_OK=0
-
-assert_fails "permission catalog missing" \
+assert_fails "permission groups probe skipped" \
   "${BASE[@]}" CF_MOCK_CATALOG_OK=0
 
-assert_fails "allow policy missing R2 write id" \
-  CF_MOCK_USER_VERIFY_OK=1 \
-  CF_MOCK_USER_DETAILS_OK=1 \
-  CF_MOCK_DETAILS_FIXTURE=token-details-missing-r2-allow.json
-
-assert_passes "deny policy on R2 id ignored when allow present" \
-  "${BASE[@]}" CF_MOCK_DETAILS_FIXTURE=token-details-deny-r2-allow.json
-
-echo "OK: Cloudflare preflight mutation checks passed"
+echo "OK: Cloudflare preflight probe mutation checks passed"
