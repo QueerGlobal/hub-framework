@@ -49,11 +49,31 @@ if grep -q $'\tTOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT\t' "${DB}"; then
   exit 1
 fi
 
-NEW_IN_DOPPLER="$(awk -F '\t' '$2 == "TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE" { v=$5 } END { print v }' "${DB}")"
+NEW_IN_DOPPLER="$(rotation_doppler_value "${DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE)"
 if [[ "${NEW_IN_DOPPLER}" == "${PASS_A}" ]]; then
   echo "FAIL: Doppler secret was not updated after rotation" >&2
   exit 1
 fi
+
+# The Doppler copy of the local state must be the re-encrypted state, written before promotion.
+assert_backup_before_promote() {
+  local label=$1 got raw hash backup_line promote_line
+  got="$(rotation_doppler_value "${DB}" TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP)"
+  raw="$(cat "${WORKDIR}/terraform.tfstate")"
+  hash="sha256:$(sha256sum "${WORKDIR}/terraform.tfstate" | cut -d' ' -f1)"
+  if [[ -z "${got}" || ( "${got}" != "${raw}" && "${got}" != "${hash}" ) ]]; then
+    echo "FAIL: ${label}: the Doppler state backup is not the re-encrypted state" >&2
+    exit 1
+  fi
+  backup_line="$(grep -n '^set TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP ' "${DB}.writes" | tail -1 | cut -d: -f1)"
+  promote_line="$(grep -n '^set TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE ' "${DB}.writes" | tail -1 | cut -d: -f1)"
+  if [[ -z "${backup_line}" || -z "${promote_line}" || ${backup_line} -gt ${promote_line} ]]; then
+    echo "FAIL: ${label}: the state backup was not written before the passphrase was promoted" >&2
+    exit 1
+  fi
+  echo "OK: ${label}: state backed up to Doppler before promotion"
+}
+assert_backup_before_promote "first rotation"
 
 (
   cd "${WORKDIR}"
@@ -81,15 +101,14 @@ if ! tofu_assert_state_method_metadata "${WORKDIR}/terraform.tfstate" bootstrap;
 fi
 echo "OK: state metadata on key_provider.pbkdf2.bootstrap after first rotation"
 
-rotation_doppler_seed "${DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE hub-framework bootstrap-admin "${NEW_IN_DOPPLER}"
-
 "${ROTATE}" "${WORKDIR}" bootstrap
 
-FINAL="$(awk -F '\t' '$2 == "TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE" { v=$5 } END { print v }' "${DB}")"
+FINAL="$(rotation_doppler_value "${DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE)"
 if [[ "${FINAL}" == "${NEW_IN_DOPPLER}" ]]; then
   echo "FAIL: second rotation did not change Doppler secret" >&2
   exit 1
 fi
+assert_backup_before_promote "second rotation"
 
 (
   cd "${WORKDIR}"

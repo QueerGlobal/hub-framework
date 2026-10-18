@@ -24,6 +24,7 @@ env:
 jobs:
   opentofu-and-shell:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       # actions/checkout v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -41,8 +42,8 @@ jobs:
         run: |
           TOFU_ZIP="tofu_${TOFU_VERSION}_linux_amd64.zip"
           BASE_URL="https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}"
-          curl -fsSL -o /tmp/tofu.zip "${BASE_URL}/${TOFU_ZIP}"
-          curl -fsSL -o /tmp/tofu.sha256sums "${BASE_URL}/tofu_${TOFU_VERSION}_SHA256SUMS"
+          curl -fsSL --connect-timeout 10 --max-time 120 -o /tmp/tofu.zip "${BASE_URL}/${TOFU_ZIP}"
+          curl -fsSL --connect-timeout 10 --max-time 60 -o /tmp/tofu.sha256sums "${BASE_URL}/tofu_${TOFU_VERSION}_SHA256SUMS"
           EXPECTED="$(grep "${TOFU_ZIP}" /tmp/tofu.sha256sums | awk '{print $1}')"
           ACTUAL="$(sha256sum /tmp/tofu.zip | awk '{print $1}')"
           if [[ "${EXPECTED}" != "${TOFU_ZIP_SHA256}" || "${EXPECTED}" != "${ACTUAL}" ]]; then
@@ -91,7 +92,7 @@ jobs:
       - name: Encryption rotation test
         run: scripts/test/encryption-rotation-test.sh
 
-      - name: Encryption rotation mutation tests
+      - name: Encryption rotation fault tests
         run: scripts/test/encryption-rotation-mutations-test.sh
 
       - name: Secrets argv test

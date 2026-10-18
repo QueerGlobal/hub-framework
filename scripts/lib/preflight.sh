@@ -8,6 +8,8 @@ source "${_PREFLIGHT_LIB_DIR}/cloudflare-preflight-permissions.sh"
 source "${_PREFLIGHT_LIB_DIR}/cloudflare-account-token-write-probe.sh"
 # shellcheck source=scripts/lib/github-preflight.sh
 source "${_PREFLIGHT_LIB_DIR}/github-preflight.sh"
+# shellcheck source=scripts/lib/doppler-secret-read.sh
+source "${_PREFLIGHT_LIB_DIR}/doppler-secret-read.sh"
 
 preflight_require_commands() {
   local c
@@ -53,7 +55,10 @@ preflight_cloudflare_account_id_required() {
   local config=$2
   local account_id="${CLOUDFLARE_ACCOUNT_ID:-}"
   if [[ -z "${account_id}" ]] && preflight_doppler_project_exists "${project}"; then
-    account_id="$(doppler secrets get CLOUDFLARE_ACCOUNT_ID --plain -p "${project}" -c "${config}" 2>/dev/null || true)"
+    if ! account_id="$(doppler_secret_read CLOUDFLARE_ACCOUNT_ID "${project}" "${config}")"; then
+      echo "Doppler error while reading CLOUDFLARE_ACCOUNT_ID from ${project}/${config}." >&2
+      return 1
+    fi
   fi
   if [[ -z "${account_id}" ]]; then
     echo "Set CLOUDFLARE_ACCOUNT_ID or store CLOUDFLARE_ACCOUNT_ID in Doppler ${project}/${config} before bootstrap." >&2
@@ -89,9 +94,9 @@ preflight_cloudflare_bootstrap_api_token() {
   local account_id=$2
   local verify
 
-  verify="$(curl_with_bearer "${token}" \
-    "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/verify" 2>/dev/null || true)"
-  if [[ "$(echo "${verify}" | jq -r '.success // false')" != "true" ]]; then
+  if ! verify="$(curl_with_bearer "${token}" \
+    "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/verify" 2>/dev/null)" \
+    || [[ "$(echo "${verify}" | jq -r '.success // false')" != "true" ]]; then
     echo "Bootstrap requires an account-owned Cloudflare API token (account verify failed)." >&2
     return 1
   fi
