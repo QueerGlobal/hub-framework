@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"sync/atomic"
@@ -8,6 +9,8 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -140,6 +143,94 @@ func TestExecuteWithBackoff_SleepsNeverExceedMaxDelay(t *testing.T) {
 	for _, d := range sleeps {
 		require.LessOrEqual(t, d, maxDelay, "sleep delay must not exceed MaxDelay")
 	}
+}
+
+func TestCapDelay(t *testing.T) {
+	tests := []struct {
+		name     string
+		delay    time.Duration
+		maxDelay time.Duration
+		want     time.Duration
+	}{
+		{name: "no cap when maxDelay zero", delay: 500 * time.Millisecond, maxDelay: 0, want: 500 * time.Millisecond},
+		{name: "no cap when maxDelay negative", delay: time.Second, maxDelay: -1, want: time.Second},
+		{name: "clamp when over cap", delay: 200 * time.Millisecond, maxDelay: 100 * time.Millisecond, want: 100 * time.Millisecond},
+		{name: "unchanged under cap", delay: 50 * time.Millisecond, maxDelay: 100 * time.Millisecond, want: 50 * time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, capDelay(tt.delay, tt.maxDelay))
+		})
+	}
+}
+
+func TestExecuteWithBackoff_MaxDelayTable(t *testing.T) {
+	rand.Seed(99)
+
+	tests := []struct {
+		name       string
+		maxDelay   time.Duration
+		wantGrowth bool
+	}{
+		{name: "no cap waits grow", maxDelay: 0, wantGrowth: true},
+		{name: "cap clamps waits", maxDelay: 60 * time.Millisecond, wantGrowth: false},
+	}
+
+	const initial = 50 * time.Millisecond
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := NewBackoff(BackoffConfig{
+				InitialDelay: initial,
+				MaxDelay:     tt.maxDelay,
+				Multiplier:   2,
+				MaxRetries:   4,
+			})
+			var sleeps []time.Duration
+			b.sleep = func(d time.Duration) {
+				sleeps = append(sleeps, d)
+			}
+
+			err := b.ExecuteWithBackoff(func() error { return fmt.Errorf("fail") })
+			require.Error(t, err)
+			require.GreaterOrEqual(t, len(sleeps), 2)
+
+			if tt.wantGrowth {
+				require.Greater(t, sleeps[len(sleeps)-1], initial, "delays should grow without a cap")
+			} else {
+				for _, d := range sleeps {
+					require.LessOrEqual(t, d, tt.maxDelay)
+				}
+			}
+		})
+	}
+}
+
+func TestExecuteWithBackoff_LogsTargetHostRedacted(t *testing.T) {
+	var buf bytes.Buffer
+	log := zerolog.New(&buf).With().Timestamp().Logger()
+	b := NewBackoff(BackoffConfig{
+		InitialDelay: time.Millisecond,
+		MaxDelay:     time.Millisecond,
+		Multiplier:   1,
+		MaxRetries:   2,
+		Logger:       &log,
+		TargetURL:    "http://apiuser:topsecret@upstream.example:8080/v1?token=leaked",
+	})
+	b.sleep = func(time.Duration) {}
+
+	err := b.ExecuteWithBackoff(func() error { return fmt.Errorf("fail") })
+	require.Error(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "upstream.example")
+	assert.Contains(t, out, "backoff retry scheduled")
+	assert.NotContains(t, out, "topsecret")
+	assert.NotContains(t, out, "apiuser")
+	assert.NotContains(t, out, "token=leaked")
+}
+
+func TestTargetHostTag_StripsCredentialsAndQuery(t *testing.T) {
+	assert.Equal(t, "upstream.example", TargetHostTag("http://user:pass@upstream.example/path?q=1"))
 }
 
 func TestExecuteWithBackoff_NoSleepAfterFinalAttempt(t *testing.T) {
