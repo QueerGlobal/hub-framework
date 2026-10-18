@@ -2,36 +2,33 @@
 
 This stack creates the GitHub Actions **release** environment for `QueerGlobal/hub-framework`, configures required reviewers, and restricts deployments to the branch pattern used by `.github/workflows/release.yml`.
 
+Remote state lives in **Cloudflare R2** (S3-compatible). The bucket and scoped credentials are created by `infra/opentofu/state-bootstrap` and written to Doppler by the bootstrap script.
+
 ## Prerequisites
 
-- OpenTofu **1.7+** (state encryption) — tested with **1.10.6**
-- Remote state: S3 bucket (see `backend-config.example.hcl`)
-- GitHub token with **Administration: Read and write** on the repository (manage environments and deployment policies)
-
-### GitHub token (Doppler)
-
-Use the **`GITHUB_TOFU_RELEASE_ENV`** secret from Doppler project **`hub-framework`**, config **`infra`**. That token must include **repo → Administration: Read and write** (classic PAT) or equivalent fine-grained **Administration** access on `QueerGlobal/hub-framework`.
-
-Export it before plan/apply:
-
-```bash
-export GITHUB_TOKEN="$(doppler secrets get GITHUB_TOFU_RELEASE_ENV --plain -p hub-framework -c infra)"
-export TF_VAR_state_encryption_passphrase="$(doppler secrets get TOFU_STATE_ENCRYPTION_PASSPHRASE --plain -p hub-framework -c infra)"
-```
+- OpenTofu **1.8+** (variable-based state encryption) — tested with **1.10.6**
+- [Doppler CLI](https://docs.doppler.com/docs/cli) with access to project **`hub-framework`**, config **`infra`**
+- After bootstrap: **`GITHUB_TOFU_RELEASE_ENV`** in Doppler (repo **Administration: Read and write**)
 
 ## One-time setup (before the first Release workflow run)
 
-A repository **admin** (for example the QueerGlobal infra owner) applies this stack once so the `release` environment, reviewers, and `main`-only deployment policy exist before anyone runs **Actions → Release**.
-
-Entry point:
+A repository **admin** runs the repo entry point once (idempotent; confirms before any write):
 
 ```bash
-cd infra/opentofu/release-environment
-cp backend-config.example.hcl backend-config.hcl   # edit bucket/region
-tofu init -backend-config=backend-config.hcl
-tofu plan
-tofu apply
+./scripts/bootstrap-release-infra.sh
 ```
+
+That script:
+
+1. Applies **state-bootstrap** (R2 bucket `queerglobal-hub-framework-tofu-state`, bucket-scoped S3 credentials).
+2. Writes backend settings and credentials to **Doppler** (`hub-framework` / `infra`).
+3. Inits/plans/applies **release-environment** using Doppler-backed `backend-config.hcl`.
+
+### What Mark supplies
+
+Only the **Cloudflare bootstrap API token** (`CLOUDFLARE_API_TOKEN`): **R2 Admin Read & Write** on the QueerGlobal account. Export it before running the script. Account ID is read from Doppler `CLOUDFLARE_ACCOUNT_ID` or `CLOUDFLARE_ACCOUNT_ID` in the environment.
+
+All other secrets (bootstrap/release state passphrases, R2 state keys, GitHub token) are created or read via Doppler by the script.
 
 After a successful apply, required reviewers (OpenTofu-managed GitHub user IDs) gate the Release workflow.
 
@@ -45,6 +42,6 @@ After a successful apply, required reviewers (OpenTofu-managed GitHub user IDs) 
 | `reviewer_usernames` | `["mnyon-grandkru"]` | GitHub usernames resolved to numeric user IDs for reviewers |
 | `reviewer_team_slug` | `""` | Optional org team slug to require as reviewer |
 | `release_branch_pattern` | `main` | Branch allowed to use the release environment |
-| `state_encryption_passphrase` | (required) | PBKDF2 passphrase for encrypted remote state |
+| `state_encryption_passphrase` | (required) | PBKDF2 passphrase for encrypted remote state (`TOFU_STATE_ENCRYPTION_PASSPHRASE` in Doppler) |
 
 Copy and edit `terraform.tfvars.example` when you need non-default reviewers.
