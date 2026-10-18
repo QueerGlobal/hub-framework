@@ -2,6 +2,8 @@
 
 Creates the shared **R2** bucket and a **bucket-scoped** S3-compatible API token for OpenTofu remote state. Bootstrap state stays **local** with OpenTofu encryption.
 
+Requires **OpenTofu 1.8+** (variable-based state encryption in `versions.tf`).
+
 ## What Mark supplies
 
 Only the **Cloudflare bootstrap API token** (export as `CLOUDFLARE_API_TOKEN`):

@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/doppler-secrets.sh
+source "${ROOT}/scripts/lib/doppler-secrets.sh"
+
 BOOTSTRAP_DIR="${ROOT}/infra/opentofu/state-bootstrap"
 RELEASE_DIR="${ROOT}/infra/opentofu/release-environment"
 DOPPLER_PROJECT="${DOPPLER_PROJECT:-hub-framework}"
@@ -24,7 +27,7 @@ require_cmd() {
   done
 }
 
-require_cmd tofu doppler jq
+require_cmd tofu doppler
 
 if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
   echo "Set CLOUDFLARE_API_TOKEN (R2 Admin Read & Write bootstrap token)." >&2
@@ -40,11 +43,12 @@ if [[ -z "${ACCOUNT_ID}" ]]; then
 fi
 
 export TF_VAR_cloudflare_account_id="${ACCOUNT_ID}"
+export TF_VAR_state_bucket_name="${STATE_BUCKET_DEFAULT}"
 
 if ! doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE --plain -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}" >/dev/null 2>&1; then
   BOOTSTRAP_PASS="$(openssl rand -base64 24)"
   confirm "Create TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE in Doppler?"
-  doppler secrets set "TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE=${BOOTSTRAP_PASS}" -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}"
+  doppler_secret_set_stdin TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE "${BOOTSTRAP_PASS}"
 fi
 export TF_VAR_bootstrap_state_encryption_passphrase
 TF_VAR_bootstrap_state_encryption_passphrase="$(doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE --plain -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}")"
@@ -52,7 +56,7 @@ TF_VAR_bootstrap_state_encryption_passphrase="$(doppler secrets get TOFU_BOOTSTR
 if ! doppler secrets get TOFU_STATE_ENCRYPTION_PASSPHRASE --plain -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}" >/dev/null 2>&1; then
   RELEASE_PASS="$(openssl rand -base64 24)"
   confirm "Create TOFU_STATE_ENCRYPTION_PASSPHRASE in Doppler?"
-  doppler secrets set "TOFU_STATE_ENCRYPTION_PASSPHRASE=${RELEASE_PASS}" -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}"
+  doppler_secret_set_stdin TOFU_STATE_ENCRYPTION_PASSPHRASE "${RELEASE_PASS}"
 fi
 
 echo "==> Bootstrap stack (R2 bucket + scoped state credentials)"
@@ -66,19 +70,21 @@ tofu apply -input=false bootstrap.tfplan
 rm -f bootstrap.tfplan
 
 BUCKET="$(tofu output -raw state_bucket_name)"
+if [[ "${BUCKET}" != "${STATE_BUCKET_DEFAULT}" ]]; then
+  echo "Unexpected bucket name ${BUCKET}; expected ${STATE_BUCKET_DEFAULT}." >&2
+  exit 1
+fi
 ENDPOINT="$(tofu output -raw r2_s3_endpoint)"
 ACCESS_KEY="$(tofu output -raw tofu_state_access_key_id)"
 SECRET_KEY="$(tofu output -raw tofu_state_secret_access_key)"
 
 confirm "Write R2 backend settings to Doppler (${DOPPLER_PROJECT}/${DOPPLER_CONFIG})?"
-doppler secrets set \
-  "TOFU_STATE_BUCKET=${BUCKET}" \
-  "TOFU_STATE_ENDPOINT=${ENDPOINT}" \
-  "TOFU_STATE_REGION=auto" \
-  "TOFU_STATE_KEY=${RELEASE_STATE_KEY}" \
-  "AWS_ACCESS_KEY_ID=${ACCESS_KEY}" \
-  "AWS_SECRET_ACCESS_KEY=${SECRET_KEY}" \
-  -p "${DOPPLER_PROJECT}" -c "${DOPPLER_CONFIG}"
+doppler_secret_set_stdin TOFU_STATE_BUCKET "${BUCKET}"
+doppler_secret_set_stdin TOFU_STATE_ENDPOINT "${ENDPOINT}"
+doppler_secret_set_stdin TOFU_STATE_REGION "auto"
+doppler_secret_set_stdin TOFU_STATE_KEY "${RELEASE_STATE_KEY}"
+doppler_secret_set_stdin AWS_ACCESS_KEY_ID "${ACCESS_KEY}"
+doppler_secret_set_stdin AWS_SECRET_ACCESS_KEY "${SECRET_KEY}"
 
 BACKEND_CONFIG="${RELEASE_DIR}/backend-config.hcl"
 confirm "Write ${BACKEND_CONFIG} from Doppler (gitignored)?"
