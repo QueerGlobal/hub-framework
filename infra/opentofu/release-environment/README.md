@@ -62,8 +62,9 @@ State and plan encryption use key provider **`state`** with `enforced = true`.
 Same two-hop `TF_ENCRYPTION` flow as bootstrap; provider name is **`state`**:
 
 ```bash
-./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/release-environment state \
-  "${TOFU_STATE_ENCRYPTION_PASSPHRASE}" "${TOFU_STATE_ENCRYPTION_PASSPHRASE_NEXT}"
+TOFU_ROTATE_OLD_PASSPHRASE="${TOFU_STATE_ENCRYPTION_PASSPHRASE}" \
+TOFU_ROTATE_NEW_PASSPHRASE="${TOFU_STATE_ENCRYPTION_PASSPHRASE_NEXT}" \
+  ./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/release-environment state
 ```
 
 Then update `TOFU_STATE_ENCRYPTION_PASSPHRASE` in Doppler `infra` and clear `_NEXT`. Requires **OpenTofu 1.13.1+**. See `scripts/test/encryption-rotation-test.sh`.

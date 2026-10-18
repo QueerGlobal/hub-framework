@@ -14,17 +14,17 @@ fi
 export TOFU
 
 usage() {
-  echo "Usage: $0 <stack_dir> <provider_name> <old_passphrase> <new_passphrase>" >&2
+  echo "Usage: TOFU_ROTATE_OLD_PASSPHRASE=... TOFU_ROTATE_NEW_PASSPHRASE=... $0 <stack_dir> <provider_name>" >&2
   echo "  provider_name: bootstrap (state-bootstrap) or state (release-environment)" >&2
   exit 1
 }
 
-[[ $# -eq 4 ]] || usage
+[[ $# -eq 2 ]] || usage
 
 STACK_DIR=$1
 PROVIDER_NAME=$2
-OLD_PASS=$3
-NEW_PASS=$4
+OLD_PASS=${TOFU_ROTATE_OLD_PASSPHRASE:?}
+NEW_PASS=${TOFU_ROTATE_NEW_PASSPHRASE:?}
 
 if [[ ${#OLD_PASS} -lt 16 || ${#NEW_PASS} -lt 16 ]]; then
   echo "Passphrases must be at least 16 characters." >&2
