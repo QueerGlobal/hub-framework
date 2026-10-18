@@ -3,6 +3,7 @@ package util
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/rand"
 	"sync/atomic"
 	"testing"
@@ -154,7 +155,7 @@ func TestCapDelay(t *testing.T) {
 	}{
 		{name: "default cap when maxDelay zero", delay: 10 * time.Minute, maxDelay: 0, want: DefaultUncappedMaxDelay},
 		{name: "under default cap when maxDelay zero", delay: 500 * time.Millisecond, maxDelay: 0, want: 500 * time.Millisecond},
-		{name: "no cap when maxDelay negative", delay: time.Second, maxDelay: -1, want: time.Second},
+		{name: "default cap when maxDelay negative", delay: 10 * time.Minute, maxDelay: -1, want: DefaultUncappedMaxDelay},
 		{name: "clamp when over cap", delay: 200 * time.Millisecond, maxDelay: 100 * time.Millisecond, want: 100 * time.Millisecond},
 		{name: "unchanged under cap", delay: 50 * time.Millisecond, maxDelay: 100 * time.Millisecond, want: 50 * time.Millisecond},
 	}
@@ -262,6 +263,25 @@ func TestExecuteWithBackoff_UncappedDelayDoesNotOverflow(t *testing.T) {
 		require.GreaterOrEqual(t, int64(d), int64(0))
 	}
 	require.Equal(t, DefaultUncappedMaxDelay, sleeps[len(sleeps)-1])
+}
+
+func TestExecuteWithBackoff_HugeInitialDelayStillSleeps(t *testing.T) {
+	b := NewBackoff(BackoffConfig{
+		InitialDelay: time.Duration(math.MaxInt64 - 1),
+		MaxDelay:     MaxBackoffDelay,
+		Multiplier:   2,
+		MaxRetries:   3,
+	})
+
+	var sleeps []time.Duration
+	b.sleep = func(d time.Duration) {
+		require.Greater(t, d, time.Duration(0), "retry must wait when initial delay is near MaxInt64")
+		sleeps = append(sleeps, d)
+	}
+
+	err := b.ExecuteWithBackoff(func() error { return fmt.Errorf("fail") })
+	require.Error(t, err)
+	require.Len(t, sleeps, 2)
 }
 
 func TestExecuteWithBackoff_NegativeInitialDelayDoesNotSleepForever(t *testing.T) {

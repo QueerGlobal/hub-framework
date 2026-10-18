@@ -33,3 +33,9 @@ variable "release_branch_pattern" {
   description = "Branch pattern allowed to deploy to the release environment (for example main)."
   default     = "main"
 }
+
+variable "state_encryption_passphrase" {
+  type        = string
+  description = "Passphrase for encrypting OpenTofu state at rest (min. 16 characters). Set via TF_VAR_state_encryption_passphrase or a secrets manager."
+  sensitive   = true
+}
