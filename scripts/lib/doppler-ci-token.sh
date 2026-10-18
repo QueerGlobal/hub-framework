@@ -38,8 +38,13 @@ doppler_assert_ci_token_cannot_read_bootstrap_admin() {
   local bootstrap_config=${3:-${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}}
 
   if [[ -z "${DOPPLER_TOKEN:-}" ]]; then
-    echo "OK: no DOPPLER_TOKEN set; skipping bootstrap-admin isolation runtime check"
-    return 0
+    if [[ "${DOPPLER_CI_ALLOW_UNSET_TOKEN:-}" == "1" ]]; then
+      echo "OK: DOPPLER_CI_ALLOW_UNSET_TOKEN=1 (local mock runs only)"
+      return 0
+    fi
+    echo "FAIL: DOPPLER_TOKEN is unset; bootstrap-admin isolation guard fails closed" >&2
+    echo "Set DOPPLER_TOKEN to an infra-scoped service token, or DOPPLER_CI_ALLOW_UNSET_TOKEN=1 for local mocks only." >&2
+    return 1
   fi
 
   if DOPPLER_TOKEN="${DOPPLER_TOKEN}" doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE \

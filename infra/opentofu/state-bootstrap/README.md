@@ -6,22 +6,22 @@ Requires **OpenTofu 1.10.0+** (state/plan encryption with `enforced = true` and 
 
 ## Cloudflare bootstrap token permissions
 
-Export `CLOUDFLARE_API_TOKEN` before running `scripts/bootstrap-release-infra.sh`. Preflight uses capability probes with the token itself, then optional policy checks by permission group **id** (allow policies only; deny is ignored):
+Export `CLOUDFLARE_API_TOKEN` before running `scripts/bootstrap-release-infra.sh`. Preflight is **capability-only** (no token policy reads and no account token list API):
 
-1. `GET /user/tokens/verify`, or `GET /accounts/{account_id}/tokens/verify` when user verify fails (account-owned tokens)
-2. `GET /accounts/{account_id}/r2/buckets?per_page=1` (R2 account access)
-3. `GET /accounts/{account_id}/tokens?per_page=1` (Account API Tokens Read/Write namespace)
-4. `GET /accounts/{account_id}/tokens/permission_groups` (catalog; resolves **Write** group names such as **Workers R2 Storage Write** and **Account API Tokens Write**, not dashboard "Edit" labels)
-5. When token details are readable (`GET /user/tokens/{id}` or `GET /accounts/{account_id}/tokens/{id}`), confirm allow policies include the catalog ids for R2 Storage Write and Account API Tokens Write. This step needs **User API Tokens Read** or **Account API Tokens Read** on the bootstrap token.
+1. **Verify** the token is **active**: `GET /accounts/{account_id}/tokens/verify`, then `GET /user/tokens/verify` if needed.
+2. **R2 list buckets**: `GET /accounts/{account_id}/r2/buckets?per_page=1` (proves account-scoped R2 access; does not prove Write).
+3. **Permission groups read**: `GET /accounts/{account_id}/tokens/permission_groups?per_page=1` (same read the bootstrap stack uses via `data.cloudflare_api_token_permission_groups`).
 
-Dashboard templates: **Account API Tokens Write** plus **Workers R2 Storage Write** at account scope.
+**R2 Write** cannot be proven with a list call. If the token only has R2 Read, preflight may still pass; the **first OpenTofu apply** fails closed when creating the bucket (no durable resource change). See `scripts/test/cloudflare-r2-write-fails-closed-test.sh`.
+
+Dashboard: **Workers R2 Storage Write** and **Account API Tokens Write** at account scope (API names use **Write**, not dashboard "Edit").
 
 ## Doppler configs
 
 | Config | Purpose | CI |
 | --- | --- | --- |
-| `infra` | Release stack remote state, `GITHUB_TOFU_RELEASE_ENV`, release passphrases | Mock vars only in `.github/workflows/infra.yml` |
-| `bootstrap-admin` | Bootstrap passphrases, `TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP` | Must not be referenced from CI |
+| `infra` | Release stack remote state, `GITHUB_TOFU_RELEASE_ENV`, release passphrases, `DOPPLER_CI_INFRA_SERVICE_TOKEN` | `DOPPLER_TOKEN` must be a service token scoped to **infra** only |
+| `bootstrap-admin` | Bootstrap passphrases, `TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP` | Must not be readable from CI (`scripts/test/doppler-ci-runtime-guard.sh`) |
 
 Release R2 credentials in `infra` cannot overwrite bootstrap state because bootstrap state is **not** stored under those credentials on R2.
 

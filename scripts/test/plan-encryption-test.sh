@@ -54,7 +54,14 @@ copy_stack_to_workdir() {
 
 prepare_release_workdir_backend() {
   local workdir=$1
-  sed -i 's/backend "s3" {}/backend "local" {\n    path = "terraform.tfstate"\n  }/' "${workdir}/versions.tf"
+  rm -f "${workdir}/backend_s3.tf"
+  cat > "${workdir}/backend_local.tf" <<'EOF'
+terraform {
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+}
+EOF
 }
 
 plan_leak_stack() {
@@ -81,10 +88,10 @@ plan_leak_stack() {
 
   (
     cd "${workdir}"
-    tofu init -input=false >/dev/null
     for kv in "${extra_env[@]}"; do
       export "${kv?}"
     done
+    tofu init -input=false >/dev/null
     tofu plan -input=false \
       -var-file="${tfvars_file}" \
       -target='terraform_data.plan_leak_probe[0]' \
@@ -147,10 +154,10 @@ PY
 
   (
     cd "${workdir}"
-    tofu init -input=false >/dev/null
     for kv in "${extra_env[@]}"; do
       export "${kv?}"
     done
+    tofu init -input=false >/dev/null
     tofu plan -input=false \
       -var-file="${tfvars_file}" \
       -target='terraform_data.plan_leak_probe[0]' \

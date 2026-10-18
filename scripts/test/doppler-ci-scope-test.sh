@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Proves infra-scoped Doppler service tokens cannot read bootstrap-admin.
+# Unit test: mock Doppler CLI enforces infra-only scope (no bootstrap-admin reads).
+# Live CI proof: scripts/test/doppler-ci-runtime-guard.sh with the real infra-scoped
+# DOPPLER_TOKEN secret (see scripts/bootstrap-release-infra.sh service token create).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
