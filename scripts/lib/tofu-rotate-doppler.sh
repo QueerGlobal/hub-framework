@@ -26,6 +26,8 @@ tofu_rotate_doppler_names() {
       return 1
       ;;
   esac
+  export TOFU_ROTATE_SECRET_NAME TOFU_ROTATE_NEXT_SECRET_NAME \
+    TOFU_ROTATE_DOPPLER_PROJECT TOFU_ROTATE_DOPPLER_CONFIG
 }
 
 tofu_rotate_doppler_get_plain() {
@@ -75,7 +77,7 @@ tofu_rotate_assert_old_passphrase_fails() {
     : >"${TOFU_ROTATE_ASSERT_RAN}"
   fi
   (
-    cd "${stack_dir}"
+    cd "${stack_dir}" || exit 1
     unset TF_ENCRYPTION
     case "${provider_name}" in
       bootstrap)
