@@ -78,17 +78,16 @@ func clampDelayMagnitude(delay time.Duration) time.Duration {
 	if delay < 0 {
 		return 0
 	}
-	if delay > MaxBackoffDelay {
-		return MaxBackoffDelay
-	}
 	return delay
 }
 
 func addDelay(a, b time.Duration) time.Duration {
 	a = clampDelayMagnitude(a)
 	b = clampDelayMagnitude(b)
-	sum := a + b
-	return clampDelayMagnitude(sum)
+	if a > MaxBackoffDelay-b {
+		return MaxBackoffDelay
+	}
+	return a + b
 }
 
 func multiplyBackoffDelay(delay time.Duration, multiplier float64, maxDelay time.Duration) time.Duration {

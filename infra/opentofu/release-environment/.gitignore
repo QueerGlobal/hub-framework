@@ -1,0 +1,4 @@
+backend-config.hcl
+.terraform/
+*.tfstate
+*.tfstate.*
