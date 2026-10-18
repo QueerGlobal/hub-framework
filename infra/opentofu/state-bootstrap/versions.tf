@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.8.0"
+  required_version = ">= 1.10.0"
 
   backend "local" {
     path = "terraform.tfstate"
@@ -15,6 +15,10 @@ terraform {
     }
 
     state {
+      method = method.aes_gcm.bootstrap
+    }
+
+    plan {
       method = method.aes_gcm.bootstrap
     }
   }
