@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -24,20 +25,21 @@ jobs:
           fetch-depth: 0
 
       - name: Validate version tag
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          version='${{ inputs.version }}'
-          case "$version" in
-            v[0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "Version must look like vMAJOR.MINOR.PATCH (got $version)" >&2; exit 1 ;;
-          esac
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must match vMAJOR.MINOR.PATCH (got $VERSION)" >&2
+            exit 1
+          fi
 
       - name: Create tag and GitHub release
         env:
+          VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          version='${{ inputs.version }}'
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$version" -m "Release $version"
-          git push origin "$version"
-          gh release create "$version" --generate-notes --title "$version"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+          gh release create "$VERSION" --generate-notes --title "$VERSION"
