@@ -21,17 +21,8 @@ source "${ROOT}/scripts/lib/doppler-ci-token.sh"
 # shellcheck source=scripts/lib/bootstrap-doppler-sync.sh
 source "${ROOT}/scripts/lib/bootstrap-doppler-sync.sh"
 
-BOOTSTRAP_RUNTIME_DIR="$(mktemp -d)"
-BOOTSTRAP_PREFLIGHT_MARKER="${BOOTSTRAP_RUNTIME_DIR}/preflight-complete"
-export BOOTSTRAP_PREFLIGHT_MARKER_PATH="${BOOTSTRAP_PREFLIGHT_MARKER}"
-
 BOOTSTRAP_DIR="${ROOT}/infra/opentofu/state-bootstrap"
-bootstrap_exit_cleanup() {
-  cleanup_plan_files
-  bootstrap_backend_disable_s3 "${BOOTSTRAP_DIR}"
-  rm -rf "${BOOTSTRAP_RUNTIME_DIR}"
-}
-trap bootstrap_exit_cleanup EXIT
+trap cleanup_plan_files EXIT
 
 RELEASE_DIR="${ROOT}/infra/opentofu/release-environment"
 STATE_BUCKET_DEFAULT="queerglobal-hub-framework-tofu-state"
@@ -44,9 +35,6 @@ register_plan_file "${RELEASE_PLAN}"
 
 confirm() {
   local prompt=$1
-  if [[ "${BOOTSTRAP_AUTO_CONFIRM:-}" == "1" ]]; then
-    return 0
-  fi
   read -r -p "${prompt} [y/N] " reply
   case "${reply}" in
     y|Y|yes|YES) return 0 ;;
@@ -71,10 +59,8 @@ ensure_doppler_bootstrap_admin_config() {
 
 preflight_bootstrap_inputs_readonly "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}" \
   "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}" || exit 1
-: >"${BOOTSTRAP_PREFLIGHT_MARKER}"
 
-ACCOUNT_ID="$(preflight_cloudflare_account_id_resolved "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}")"
-preflight_cloudflare_account_id "${ACCOUNT_ID}"
+ACCOUNT_ID="$(preflight_cloudflare_account_id_required "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}")"
 
 preflight_ensure_doppler_project_and_config "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}"
 ensure_doppler_bootstrap_admin_config
@@ -119,7 +105,6 @@ tofu plan -input=false -out="${BOOTSTRAP_PLAN}"
 confirm "Apply bootstrap plan?"
 tofu apply -input=false "${BOOTSTRAP_PLAN}"
 
-ensure_doppler_bootstrap_admin_config
 confirm "Back up encrypted local bootstrap state to Doppler (${DOPPLER_BOOTSTRAP_ADMIN_CONFIG})?"
 bootstrap_backup_local_state_to_doppler "${BOOTSTRAP_DIR}/terraform.tfstate" \
   "${DOPPLER_PROJECT_NAME}" "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}"
@@ -145,6 +130,7 @@ BACKEND_CONFIG="${RELEASE_DIR}/backend-config.hcl"
 confirm "Write ${BACKEND_CONFIG} from Doppler (gitignored)?"
 export BACKEND_CONFIG
 doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c '
+set -euo pipefail
 cat > "${BACKEND_CONFIG}" <<EOF
 bucket                      = "${TOFU_STATE_BUCKET}"
 key                         = "${TOFU_STATE_KEY}"
@@ -171,19 +157,18 @@ if [[ -n "${GITHUB_TOFU_RELEASE_ENV:-}" ]]; then
 else
   GITHUB_TOKEN="$(doppler secrets get GITHUB_TOFU_RELEASE_ENV --plain -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}")"
 fi
-export TF_VAR_state_encryption_passphrase
+export RELEASE_PLAN
 
 doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c '
-  export GITHUB_TOKEN="${GITHUB_TOKEN}"
-  export TF_VAR_state_encryption_passphrase="${TF_VAR_state_encryption_passphrase}"
+  set -euo pipefail
   tofu init -input=false -backend-config=backend-config.hcl -reconfigure
-  tofu plan -input=false -out="'"${RELEASE_PLAN}"'"
+  tofu plan -input=false -out="${RELEASE_PLAN}"
 '
 
 confirm "Apply release-environment plan?"
 doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c '
-  export GITHUB_TOKEN="${GITHUB_TOKEN}"
-  tofu apply -input=false "'"${RELEASE_PLAN}"'"
+  set -euo pipefail
+  tofu apply -input=false "${RELEASE_PLAN}"
 '
 
 echo "Done. Release environment is ready; bootstrap state remains local with backup in ${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}."

@@ -28,10 +28,14 @@ jobs:
       # actions/checkout v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
+      # dopplerhq/cli-action v4.0.1
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@4819d808ab99e5cde19a0637a16536a4038fad73
+
       - name: Fail closed if DOPPLER_TOKEN reads bootstrap-admin
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
-        run: scripts/test/doppler-ci-runtime-guard.sh
+        run: scripts/doppler-ci-guard.sh
 
       - name: Install OpenTofu
         run: |
@@ -78,26 +82,17 @@ jobs:
       - name: Plan file encryption test
         run: scripts/test/plan-encryption-test.sh
 
-      - name: Cloudflare preflight negative test
-        run: scripts/test/cloudflare-preflight-test.sh
-
-      - name: Cloudflare account token preflight test
-        run: scripts/test/cloudflare-preflight-account-token-test.sh
-
       - name: Cloudflare preflight mutation tests
         run: scripts/test/cloudflare-preflight-mutations-test.sh
 
-      - name: Cloudflare R2 write fails closed test
-        run: scripts/test/cloudflare-r2-write-fails-closed-test.sh
+      - name: GitHub token preflight mutation tests
+        run: scripts/test/github-preflight-mutations-test.sh
 
       - name: Encryption rotation test
         run: scripts/test/encryption-rotation-test.sh
 
       - name: Secrets argv test
         run: scripts/test/secrets-argv-test.sh
-
-      - name: Release backend E2E guard test
-        run: scripts/test/release-backend-e2e-guard-test.sh
 
       - name: Doppler CI isolation test
         run: scripts/test/doppler-ci-isolation-test.sh

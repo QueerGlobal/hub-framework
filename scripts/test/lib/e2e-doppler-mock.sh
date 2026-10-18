@@ -3,25 +3,24 @@
 
 e2e_doppler_mock_install() {
   local fake_bin=$1
+  local shim_log_lib
+  shim_log_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/argv-shim-log.sh"
   mkdir -p "${fake_bin}"
-  cat > "${fake_bin}/doppler" <<'DOPPLER'
+  cat > "${fake_bin}/doppler" <<DOPPLER
 #!/usr/bin/bash
 set -euo pipefail
-if [[ -n "${ARGV_SHIM_LOG:-}" ]]; then
-  {
-    printf 'SHIM:doppler ARGV:'
-    printf '%q ' "$@"
-    printf '\n'
-    tr '\0' ' ' < /proc/self/cmdline
-    printf '\n'
-  } >> "${ARGV_SHIM_LOG}"
-fi
+# shellcheck source=scripts/test/lib/argv-shim-log.sh
+source "${shim_log_lib}"
+argv_shim_log_invocation doppler "\$@"
+DOPPLER
+  cat >> "${fake_bin}/doppler" <<'DOPPLER'
 write_log="${E2E_DOPPLER_WRITE_LOG:?}"
 secret_db="${E2E_DOPPLER_SECRET_DB:?}"
-preflight_marker="${BOOTSTRAP_PREFLIGHT_MARKER_PATH:-}"
+curl_events="${E2E_CURL_EVENT_LOG:?}"
 
+# The token create probe is the last Cloudflare preflight call; no write may come before it.
 preflight_marker_ready() {
-  [[ -n "${preflight_marker}" && -f "${preflight_marker}" ]]
+  grep -Eq '^POST https://api\.cloudflare\.com/client/v4/accounts/[^/]+/tokens$' "${curl_events}" 2>/dev/null
 }
 
 cmd=${1:-}
@@ -42,7 +41,7 @@ case "${cmd}" in
     fi
     if [[ "${sub}" == "create" ]]; then
       if ! preflight_marker_ready; then
-        echo "E2E FAIL: Doppler project create before preflight marker file" >&2
+        echo "E2E FAIL: Doppler project create before Cloudflare preflight finished" >&2
         exit 1
       fi
       echo "created project" >>"${write_log}"
@@ -60,7 +59,7 @@ case "${cmd}" in
     fi
     if [[ "${sub}" == "create" ]]; then
       if ! preflight_marker_ready; then
-        echo "E2E FAIL: Doppler config create before preflight marker file" >&2
+        echo "E2E FAIL: Doppler config create before Cloudflare preflight finished" >&2
         exit 1
       fi
       cfg_name=${2:-}
@@ -88,8 +87,8 @@ case "${cmd}" in
       config=""
       while [[ $# -gt 0 ]]; do
         case "$1" in
-          -p) project=$2; shift 2 ;;
-          -c) config=$2; shift 2 ;;
+          -p|--project) project=$2; shift 2 ;;
+          -c|--config) config=$2; shift 2 ;;
           --plain) shift ;;
           *) shift ;;
         esac
@@ -104,7 +103,7 @@ case "${cmd}" in
     fi
     if [[ "${sub}" == "set" ]]; then
       if ! preflight_marker_ready; then
-        echo "E2E FAIL: Doppler secret write before preflight marker file" >&2
+        echo "E2E FAIL: Doppler secret write before Cloudflare preflight finished" >&2
         exit 1
       fi
       project=""
@@ -113,8 +112,8 @@ case "${cmd}" in
       shift 2 || true
       while [[ $# -gt 0 ]]; do
         case "$1" in
-          -p) project=$2; shift 2 ;;
-          -c) config=$2; shift 2 ;;
+          -p|--project) project=$2; shift 2 ;;
+          -c|--config) config=$2; shift 2 ;;
           *) shift ;;
         esac
       done
@@ -146,13 +145,22 @@ case "${cmd}" in
     fi
     ;;
   run)
+    project=""
+    config=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        -p|-c|--project|--config) shift 2 ;;
+        -p|--project) project=$2; shift 2 ;;
+        -c|--config) config=$2; shift 2 ;;
         --) shift; break ;;
         *) shift ;;
       esac
     done
+    # Like the real CLI, inject the config's secrets as environment variables.
+    while IFS=$'\t' read -r _ name p c value; do
+      if [[ "${p}" == "${project}" && "${c}" == "${config}" ]]; then
+        export "${name}=${value}"
+      fi
+    done <"${secret_db}"
     exec "$@"
     ;;
 esac

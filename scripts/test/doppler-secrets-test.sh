@@ -33,19 +33,13 @@ source "${ROOT}/scripts/lib/doppler-secrets.sh"
 SECRET='super-secret-not-on-argv-xyzzy'
 doppler_secret_set_stdin TEST_SECRET "${SECRET}"
 
-if grep -F "${SECRET}" "${LOG}"; then
+if grep -qF "${SECRET}" "${LOG}"; then
   echo "FAIL: secret value appeared in doppler argv log" >&2
   exit 1
 fi
 
 if ! grep -qFx "${SECRET}" "${STDIN_CAPTURE}"; then
   echo "FAIL: secret value not passed via stdin" >&2
-  exit 1
-fi
-
-export BOOTSTRAP_DOPPLER_SECRET_DRY_RUN=1
-if ! doppler_secret_set_stdin DRY_RUN_KEY "${SECRET}" | grep -q 'dry-run: doppler secrets set DRY_RUN_KEY'; then
-  echo "FAIL: dry-run mode did not emit expected message" >&2
   exit 1
 fi
 

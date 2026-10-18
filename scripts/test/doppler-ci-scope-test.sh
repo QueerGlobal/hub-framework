@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Unit test: mock Doppler CLI enforces infra-only scope (no bootstrap-admin reads).
-# Live CI proof: scripts/test/doppler-ci-runtime-guard.sh with the real infra-scoped
+# Live CI proof: scripts/doppler-ci-guard.sh with the real infra-scoped
 # DOPPLER_TOKEN secret (see scripts/bootstrap-release-infra.sh service token create).
 set -euo pipefail
 
@@ -60,6 +60,21 @@ case "${cmd}" in
         exit 1
       fi
       echo "mock-infra-secret-value"
+      exit 0
+    fi
+    if [[ "${sub}" == --only-names ]]; then
+      config=""
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          -c) config=$2; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      if [[ "${config}" == "bootstrap-admin" ]]; then
+        echo "doppler: access denied to config bootstrap-admin" >&2
+        exit 1
+      fi
+      echo "TOFU_STATE_ENCRYPTION_PASSPHRASE"
       exit 0
     fi
     if [[ "${sub}" == set ]]; then
