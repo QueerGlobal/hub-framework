@@ -95,6 +95,23 @@ func testRequest(path string) *entity.HTTPServiceRequest {
 	}
 }
 
+func TestForwardingService_NameFromConfig(t *testing.T) {
+	task, err := NewForwardingService(map[string]interface{}{
+		"name":          "remote-forward",
+		"host":          "http://127.0.0.1:9",
+		"pathprefix":    "api",
+		"clientTimeout": float64(1),
+		"backoff": map[string]interface{}{
+			"initialDelay": float64(0.005),
+			"maxDelay":     float64(0.01),
+			"multiplier":   float64(1.0),
+			"maxRetries":   float64(1),
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "remote-forward", task.Name())
+}
+
 func TestForwardingService_SuccessJSONResponse(t *testing.T) {
 	const wantBody = `{"result":"ok"}`
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
