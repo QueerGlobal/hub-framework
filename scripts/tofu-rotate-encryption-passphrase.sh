@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Two-hop passphrase rotation via TF_ENCRYPTION (no tracked .tf changes).
-# Reads the current passphrase from Doppler, writes a generated _NEXT secret, rotates, then promotes _NEXT.
+# Reads the current passphrase from Doppler, stages a generated one as _NEXT, rotates,
+# verifies the state was re-keyed, backs the bootstrap state up, then promotes _NEXT.
+# A run that stops part way is resumed by running the script again: it reuses the staged _NEXT.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/secret-shell-guard.sh
+source "${ROOT}/scripts/lib/secret-shell-guard.sh"
+secret_shell_refuse_xtrace
 # shellcheck source=scripts/lib/tofu-rotate-doppler.sh
 source "${ROOT}/scripts/lib/tofu-rotate-doppler.sh"
 
@@ -32,14 +37,13 @@ tofu_rotate_doppler_names "${PROVIDER_NAME}" || exit 1
 
 OLD_PASS=""
 NEW_PASS=""
-rc=0
-OLD_PASS="$(tofu_rotate_doppler_get_plain "${TOFU_ROTATE_SECRET_NAME}" \
-  "${TOFU_ROTATE_DOPPLER_PROJECT}" "${TOFU_ROTATE_DOPPLER_CONFIG}")" || rc=$?
-if [[ ${rc} -eq 2 || -z "${OLD_PASS}" ]]; then
-  echo "Missing current passphrase ${TOFU_ROTATE_SECRET_NAME} in Doppler ${TOFU_ROTATE_DOPPLER_PROJECT}/${TOFU_ROTATE_DOPPLER_CONFIG}." >&2
+if ! OLD_PASS="$(doppler_secret_read "${TOFU_ROTATE_SECRET_NAME}" \
+  "${TOFU_ROTATE_DOPPLER_PROJECT}" "${TOFU_ROTATE_DOPPLER_CONFIG}")"; then
+  echo "Doppler error while reading ${TOFU_ROTATE_SECRET_NAME} from ${TOFU_ROTATE_DOPPLER_PROJECT}/${TOFU_ROTATE_DOPPLER_CONFIG}; refusing to rotate." >&2
   exit 1
 fi
-if [[ ${rc} -ne 0 ]]; then
+if [[ -z "${OLD_PASS}" ]]; then
+  echo "Missing current passphrase ${TOFU_ROTATE_SECRET_NAME} in Doppler ${TOFU_ROTATE_DOPPLER_PROJECT}/${TOFU_ROTATE_DOPPLER_CONFIG}." >&2
   exit 1
 fi
 if [[ ${#OLD_PASS} -lt 16 ]]; then
@@ -47,27 +51,24 @@ if [[ ${#OLD_PASS} -lt 16 ]]; then
   exit 1
 fi
 
-rc=0
-if ! tofu_rotate_doppler_secret_empty_or_missing "${TOFU_ROTATE_NEXT_SECRET_NAME}" \
-  "${TOFU_ROTATE_DOPPLER_PROJECT}" "${TOFU_ROTATE_DOPPLER_CONFIG}"; then
-  rc=$?
-  if [[ ${rc} -ne 0 ]]; then
-    echo "Doppler error while checking ${TOFU_ROTATE_NEXT_SECRET_NAME}; refusing to rotate." >&2
-    exit 1
-  fi
-  echo "Refusing to overwrite existing ${TOFU_ROTATE_NEXT_SECRET_NAME} in Doppler." >&2
+if ! NEW_PASS="$(doppler_secret_read "${TOFU_ROTATE_NEXT_SECRET_NAME}" \
+  "${TOFU_ROTATE_DOPPLER_PROJECT}" "${TOFU_ROTATE_DOPPLER_CONFIG}")"; then
+  echo "Doppler error while reading ${TOFU_ROTATE_NEXT_SECRET_NAME} from ${TOFU_ROTATE_DOPPLER_PROJECT}/${TOFU_ROTATE_DOPPLER_CONFIG}; refusing to rotate." >&2
   exit 1
 fi
-
-NEW_PASS="$(tofu_rotate_generate_passphrase)" || exit 1
-case "${NEW_PASS}" in
-  fixed-mutant-passphrase-*)
-    echo "Refusing deterministic passphrase for rotation." >&2
-    exit 1
-    ;;
-esac
-doppler_secret_set_stdin "${TOFU_ROTATE_NEXT_SECRET_NAME}" "${NEW_PASS}" \
-  "${TOFU_ROTATE_DOPPLER_PROJECT}" "${TOFU_ROTATE_DOPPLER_CONFIG}"
+if [[ -n "${NEW_PASS}" ]]; then
+  if [[ "${NEW_PASS}" == "${OLD_PASS}" ]]; then
+    # A run that stopped after promoting: only the leftover _NEXT remains.
+    tofu_rotate_delete_next
+    echo "${TOFU_ROTATE_SECRET_NAME} was already promoted; removed the leftover ${TOFU_ROTATE_NEXT_SECRET_NAME}."
+    exit 0
+  fi
+  echo "Resuming the rotation staged in ${TOFU_ROTATE_NEXT_SECRET_NAME}."
+else
+  NEW_PASS="$(secret_shell_generate_passphrase)" || exit 1
+  doppler_secret_set_stdin "${TOFU_ROTATE_NEXT_SECRET_NAME}" "${NEW_PASS}" \
+    "${TOFU_ROTATE_DOPPLER_PROJECT}" "${TOFU_ROTATE_DOPPLER_CONFIG}"
+fi
 
 hop1_tf_encryption() {
   cat <<EOF
@@ -141,41 +142,28 @@ plan {
 EOF
 }
 
-set_passphrase_tf_vars() {
-  local pass=$1
-  case "${PROVIDER_NAME}" in
-    bootstrap)
-      export TF_VAR_passphrase="${pass}"
-      export TF_VAR_bootstrap_state_encryption_passphrase="${pass}"
-      ;;
-    state)
-      export TF_VAR_state_encryption_passphrase="${pass}"
-      ;;
-    *)
-      echo "Unknown provider_name: ${PROVIDER_NAME}" >&2
-      return 1
-      ;;
-  esac
-}
-
 cd "${STACK_DIR}"
 
-export TF_ENCRYPTION
-set_passphrase_tf_vars "${OLD_PASS}"
-TF_ENCRYPTION="$(hop1_tf_encryption)"
-"${TOFU}" apply -refresh-only -auto-approve -input=false
+if tofu_rotate_committed_config_decrypts "${STACK_DIR}" "${PROVIDER_NAME}" "${NEW_PASS}" "${TOFU}"; then
+  echo "State already decrypts with ${TOFU_ROTATE_NEXT_SECRET_NAME}; skipping the two hops."
+else
+  export TF_ENCRYPTION
+  tofu_rotate_export_passphrase_vars "${PROVIDER_NAME}" "${OLD_PASS}"
+  TF_ENCRYPTION="$(hop1_tf_encryption)"
+  "${TOFU}" apply -refresh-only -auto-approve -input=false
 
-set_passphrase_tf_vars "${NEW_PASS}"
-TF_ENCRYPTION="$(hop2_tf_encryption)"
-"${TOFU}" apply -refresh-only -auto-approve -input=false
+  tofu_rotate_export_passphrase_vars "${PROVIDER_NAME}" "${NEW_PASS}"
+  TF_ENCRYPTION="$(hop2_tf_encryption)"
+  "${TOFU}" apply -refresh-only -auto-approve -input=false
 
-unset TF_ENCRYPTION
+  unset TF_ENCRYPTION
+fi
 
-tofu_rotate_assert_old_passphrase_fails "${STACK_DIR}" "${PROVIDER_NAME}" "${OLD_PASS}" "${TOFU}"
+tofu_rotate_verify_rekeyed "${STACK_DIR}" "${PROVIDER_NAME}" "${OLD_PASS}" "${NEW_PASS}" "${TOFU}"
+tofu_rotate_backup_state "${STACK_DIR}" "${PROVIDER_NAME}"
 
 doppler_secret_set_stdin "${TOFU_ROTATE_SECRET_NAME}" "${NEW_PASS}" \
   "${TOFU_ROTATE_DOPPLER_PROJECT}" "${TOFU_ROTATE_DOPPLER_CONFIG}"
-doppler secrets delete "${TOFU_ROTATE_NEXT_SECRET_NAME}" \
-  -p "${TOFU_ROTATE_DOPPLER_PROJECT}" -c "${TOFU_ROTATE_DOPPLER_CONFIG}" --silent --no-interactive
+tofu_rotate_delete_next
 
 echo "Passphrase rotation complete for ${PROVIDER_NAME} (Doppler ${TOFU_ROTATE_SECRET_NAME} updated)."

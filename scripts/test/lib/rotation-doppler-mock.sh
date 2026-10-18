@@ -1,83 +1,90 @@
 # shellcheck shell=bash
 # In-memory Doppler mock for encryption rotation tests.
+# Like the real CLI, "secrets get" exits 0 with an empty value for an absent secret only when
+# --no-exit-on-missing-secret is passed. ROTATION_DOPPLER_FAIL_GET lists secret names whose
+# reads fail with an auth error whose text says "not found", to prove errors are never read as missing.
+# Values read from a file with newlines (state backups) are stored as sha256:<hex> of the bytes. Argv goes to ARGV_SHIM_LOG when set.
 
 rotation_doppler_mock_install() {
   local fake_bin=$1
   local db=$2
+  local shim_log_lib
+  shim_log_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/argv-shim-log.sh"
   mkdir -p "${fake_bin}"
   cat > "${fake_bin}/doppler" <<MOCK
 #!/usr/bin/bash
 set -euo pipefail
-db="\${ROTATION_DOPPLER_DB:?}"
-cmd=\${1:-}
-shift || true
-case "\${cmd}" in
-  secrets)
-    sub=\${1:-}
-    shift || true
-    if [[ "\${sub}" == get ]]; then
-      name=\${1:-}
-      shift || true
-      project=""
-      config=""
-      while [[ \$# -gt 0 ]]; do
-        case "\$1" in
-          -p) project=\$2; shift 2 ;;
-          -c) config=\$2; shift 2 ;;
-          --plain) shift ;;
-          *) shift ;;
-        esac
-      done
-      if [[ "\${MOCK_DOPPLER_NETWORK_ERROR:-}" == 1 ]]; then
-        echo "Doppler Error: network timeout" >&2
-        exit 1
+# shellcheck source=scripts/test/lib/argv-shim-log.sh
+source "${shim_log_lib}"
+argv_shim_log_invocation doppler "\$@"
+db="\${ROTATION_DOPPLER_DB:-${db}}"
+MOCK
+  cat >> "${fake_bin}/doppler" <<'MOCK'
+parse_scope() {
+  project=""
+  config=""
+  missing_ok=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p|--project) project=$2; shift 2 ;;
+      -c|--config) config=$2; shift 2 ;;
+      --no-exit-on-missing-secret) missing_ok=1; shift ;;
+      *) shift ;;
+    esac
+  done
+}
+
+[[ "${1:-}" == secrets ]] || { echo "unexpected doppler: $*" >&2; exit 1; }
+sub=${2:-}
+name=${3:-}
+shift 3
+parse_scope "$@"
+case "${sub}" in
+  get)
+    if [[ " ${ROTATION_DOPPLER_FAIL_GET:-} " == *" ${name} "* ]]; then
+      echo "Doppler Error: Unable to authenticate: token not found (HTTP 404 from proxy)" >&2
+      exit 1
+    fi
+    found=0
+    value=""
+    while IFS=$'\t' read -r _ n p c v; do
+      if [[ "${n}" == "${name}" && "${p}" == "${project}" && "${c}" == "${config}" ]]; then
+        found=1
+        value=${v}
       fi
-      line=\$(awk -F '\t' -v n="\${name}" -v p="\${project}" -v c="\${config}" \
-        '\$2 == n && \$3 == p && \$4 == c { print \$5 }' "\${db}" | tail -1)
-      if [[ -z "\${line}" ]]; then
-        echo "Doppler Error: Could not find requested secret" >&2
-        exit 1
-      fi
-      printf '%s' "\${line}"
-      exit 0
+    done <"${db}"
+    if [[ ${found} -eq 0 && ${missing_ok} -eq 0 ]]; then
+      echo "Doppler Error: Could not find requested secret: ${name}" >&2
+      exit 1
     fi
-    if [[ "\${sub}" == set ]]; then
-      name=\${1:-}
-      shift || true
-      project=""
-      config=""
-      while [[ \$# -gt 0 ]]; do
-        case "\$1" in
-          -p) project=\$2; shift 2 ;;
-          -c) config=\$2; shift 2 ;;
-          --silent|--no-interactive) shift ;;
-          *) shift ;;
-        esac
-      done
-      value="\$(cat)"
-      printf '%s\t%s\t%s\t%s\t%s\n' "\$(date +%s)" "\${name}" "\${project}" "\${config}" "\${value}" >>"\${db}"
-      exit 0
+    printf '%s\n' "${value}"
+    ;;
+  set)
+    raw="$(mktemp)"
+    cat >"${raw}"
+    if [[ "$(wc -l <"${raw}")" -gt 0 ]]; then
+      value="sha256:$(sha256sum <"${raw}" | cut -d' ' -f1)"
+    else
+      value="$(cat "${raw}")"
     fi
-    if [[ "\${sub}" == delete ]]; then
-      name=\${1:-}
-      shift || true
-      project=""
-      config=""
-      while [[ \$# -gt 0 ]]; do
-        case "\$1" in
-          -p) project=\$2; shift 2 ;;
-          -c) config=\$2; shift 2 ;;
-          *) shift ;;
-        esac
-      done
-      awk -F '\t' -v n="\${name}" -v p="\${project}" -v c="\${config}" \
-        '!( \$2 == n && \$3 == p && \$4 == c )' "\${db}" >"\${db}.tmp" && mv "\${db}.tmp" "\${db}"
-      exit 0
-    fi
+    rm -f "${raw}"
+    awk -F '\t' -v n="${name}" -v p="${project}" -v c="${config}" \
+      '!( $2 == n && $3 == p && $4 == c )' "${db}" >"${db}.tmp"
+    mv "${db}.tmp" "${db}"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "${name}" "${project}" "${config}" "${value}" >>"${db}"
+    printf 'set %s %s/%s\n' "${name}" "${project}" "${config}" >>"${db}.writes"
+    ;;
+  delete)
+    awk -F '\t' -v n="${name}" -v p="${project}" -v c="${config}" \
+      '!( $2 == n && $3 == p && $4 == c )' "${db}" >"${db}.tmp"
+    mv "${db}.tmp" "${db}"
+    printf 'delete %s %s/%s\n' "${name}" "${project}" "${config}" >>"${db}.writes"
+    ;;
+  *)
+    echo "unexpected doppler: secrets ${sub} ${name}" >&2
+    exit 1
     ;;
 esac
-echo "unexpected doppler: \$*" >&2
-exit 1
 MOCK
   chmod +x "${fake_bin}/doppler"
 }
@@ -85,4 +92,10 @@ MOCK
 rotation_doppler_seed() {
   local db=$1 name=$2 project=$3 config=$4 value=$5
   printf '%s\t%s\t%s\t%s\t%s\n' 0 "${name}" "${project}" "${config}" "${value}" >>"${db}"
+}
+
+# Prints the stored value of one secret (empty when absent).
+rotation_doppler_value() {
+  local db=$1 name=$2
+  awk -F '\t' -v n="${name}" '$2 == n { v = $5 } END { print v }' "${db}"
 }

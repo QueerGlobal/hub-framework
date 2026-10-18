@@ -91,4 +91,39 @@ if ! grep -q '^bucket *= "queerglobal-hub-framework-tofu-state"$' "${BACKEND_CON
   exit 1
 fi
 
+# The passphrases bootstrap generated must never have reached any argv.
+GENERATED=()
+for name in TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE TOFU_STATE_ENCRYPTION_PASSPHRASE; do
+  value="$(awk -F '\t' -v n="${name}" '$2 == n { v = $5 } END { print v }' "${SECRET_DB}")"
+  if [[ ${#value} -lt 32 ]]; then
+    echo "FAIL: bootstrap did not generate ${name}" >&2
+    exit 1
+  fi
+  GENERATED+=("${value}")
+done
+argv_shim_assert_no_secrets "${ARGV_SHIM_LOG}" "bootstrap generated passphrase" "${GENERATED[@]}"
+echo "OK: generated passphrases stayed off argv"
+
+# A Doppler read error on a stored passphrase must stop bootstrap, never regenerate it.
+: >"${WRITE_LOG}"
+rc=0
+(
+  cd "${CLONE_DIR}"
+  { yes || true; } | E2E_DOPPLER_FAIL_GET=TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE ./scripts/bootstrap-release-infra.sh
+) >"${RUN_LOG}" 2>&1 || rc=$?
+if [[ ${rc} -eq 0 ]]; then
+  echo "FAIL: bootstrap continued after a Doppler error reading the bootstrap passphrase" >&2
+  exit 1
+fi
+if grep -q 'secret set TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE ' "${WRITE_LOG}"; then
+  echo "FAIL: bootstrap overwrote the bootstrap passphrase after a Doppler read error" >&2
+  exit 1
+fi
+if ! grep -q 'Doppler error while reading TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE' "${RUN_LOG}"; then
+  echo "FAIL: bootstrap stopped after a Doppler read error without naming it" >&2
+  cat "${RUN_LOG}" >&2
+  exit 1
+fi
+echo "OK: a Doppler read error stops bootstrap without regenerating the passphrase"
+
 echo "OK: clean-checkout E2E bootstrap path (preflight before writes, config split, backup, release init and plan)"

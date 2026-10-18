@@ -59,7 +59,7 @@ State and plan encryption use key provider **`state`** with `enforced = true`.
 
 ## Passphrase rotation
 
-Same two-hop `TF_ENCRYPTION` flow as bootstrap; provider name is **`state`**. The rotation script reads `TOFU_STATE_ENCRYPTION_PASSPHRASE` from Doppler `infra`, generates `_NEXT`, rotates, verifies the old passphrase fails, then promotes:
+Same two-hop `TF_ENCRYPTION` flow as bootstrap; provider name is **`state`**. The rotation script reads `TOFU_STATE_ENCRYPTION_PASSPHRASE` from Doppler `infra`, stages a generated `_NEXT`, rotates, checks that the committed config decrypts state with the new passphrase and the old one fails, then promotes. A run that stops part way is finished by running the same command again:
 
 ```bash
 ./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/release-environment state

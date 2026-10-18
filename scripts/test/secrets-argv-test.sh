@@ -54,11 +54,16 @@ run_preflight_from() {
 run_preflight_from "${ROOT}/scripts/lib"
 argv_shim_assert_no_secrets "${ARGV_LOG}" "preflight" "${SECRETS[@]}"
 echo "OK: preflight keeps the Cloudflare token off argv"
+if ! grep -q '^SHIM:curl ' "${ARGV_LOG}" || grep '^SHIM:curl ' "${ARGV_LOG}" | grep -qv -- '--max-time'; then
+  echo "FAIL: preflight: a curl call has no --max-time" >&2
+  exit 1
+fi
+echo "OK: every preflight curl call has a timeout"
 
 # Mutation: put the bearer header back on curl argv in a copy of the library; the check must name curl.
 MUTANT_LIB="${WORKDIR}/mutant-lib"
 cp -a "${ROOT}/scripts/lib" "${MUTANT_LIB}"
-sed -i 's|printf '"'"'Authorization: Bearer %s\\n'"'"' "${token}" \| curl -fsS -H @- "$@"|curl -fsS -H "Authorization: Bearer ${token}" "$@"|' \
+sed -i 's|printf '"'"'Authorization: Bearer %s\\n'"'"' "${token}" \| curl -fsS "${CURL_BEARER_TIMEOUT_ARGS\[@\]}" -H @- "$@"|curl -fsS "${CURL_BEARER_TIMEOUT_ARGS[@]}" -H "Authorization: Bearer ${token}" "$@"|' \
   "${MUTANT_LIB}/curl-bearer-auth.sh"
 if cmp -s "${ROOT}/scripts/lib/curl-bearer-auth.sh" "${MUTANT_LIB}/curl-bearer-auth.sh"; then
   echo "FAIL: argv mutant was not applied" >&2
@@ -90,7 +95,7 @@ if ! grep -Fq 'preflight: a secret reached the argv of curl' <<<"${msg}"; then
 fi
 echo "OK: argv mutant caught: direct bearer in preflight_cloudflare_bootstrap_api_token"
 
-# Segment 2: passphrase rotation with real OpenTofu and mock Doppler.
+# Segment 2: passphrase rotation with real OpenTofu behind the argv shim and the logging Doppler mock.
 FIXTURE="${ROOT}/infra/opentofu/encryption-rotation-fixture"
 ROT_DB="${WORKDIR}/rotation-doppler.tsv"
 : >"${ROT_DB}"
@@ -101,14 +106,24 @@ rotation_doppler_seed "${ROT_DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE hub
 export ROTATION_DOPPLER_DB="${ROT_DB}" DOPPLER_PROJECT=hub-framework DOPPLER_CONFIG=bootstrap-admin
 mkdir -p "${WORKDIR}/stack"
 cp "${FIXTURE}/variables.tf" "${FIXTURE}/main.tf" "${FIXTURE}/versions.tf" "${WORKDIR}/stack/"
-REAL_TOFU="$(PATH="/usr/local/bin:/usr/bin:/bin" command -v tofu)"
-export TOFU="${REAL_TOFU}"
-( cd "${WORKDIR}/stack" && TF_VAR_passphrase="${PASS_A}" "${REAL_TOFU}" init -input=false >/dev/null \
-  && TF_VAR_passphrase="${PASS_A}" "${REAL_TOFU}" apply -input=false -auto-approve >/dev/null )
+export TOFU=tofu
+( cd "${WORKDIR}/stack" && TF_VAR_passphrase="${PASS_A}" tofu init -input=false >/dev/null \
+  && TF_VAR_passphrase="${PASS_A}" tofu apply -input=false -auto-approve >/dev/null )
 : >"${ARGV_LOG}"
 "${ROOT}/scripts/tofu-rotate-encryption-passphrase.sh" "${WORKDIR}/stack" bootstrap >/dev/null
-argv_shim_assert_no_secrets "${ARGV_LOG}" "rotation" "${SECRETS[@]}"
-echo "OK: rotation keeps passphrases off argv"
+ROTATED_PASS="$(rotation_doppler_value "${ROT_DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE)"
+if [[ ${#ROTATED_PASS} -lt 32 ]]; then
+  echo "FAIL: rotation segment did not promote a generated passphrase" >&2
+  exit 1
+fi
+argv_shim_assert_no_secrets "${ARGV_LOG}" "rotation" "${SECRETS[@]}" "${ROTATED_PASS}"
+for tool in doppler tofu; do
+  if ! grep -q "^SHIM:${tool} " "${ARGV_LOG}"; then
+    echo "FAIL: rotation segment never logged ${tool}, so its argv was not checked" >&2
+    exit 1
+  fi
+done
+echo "OK: rotation keeps the current and generated passphrases off argv"
 
 # Segment 3: full bootstrap (doppler run bodies, tofu, curl) with test-mode tofu.
 e2e_doppler_mock_install "${SHIM_BIN}"

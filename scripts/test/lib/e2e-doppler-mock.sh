@@ -35,11 +35,13 @@ require_preflight() {
 parse_scope() {
   project=""
   config=""
+  missing_ok=0
   rest=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -p|--project) project=$2; shift 2 ;;
       -c|--config) config=$2; shift 2 ;;
+      --no-exit-on-missing-secret) missing_ok=1; shift ;;
       --) shift; rest=("$@"); return 0 ;;
       *) shift ;;
     esac
@@ -101,9 +103,19 @@ case "${cmd}" in
       name=${2:-}
       shift 2 || true
       parse_scope "$@"
+      # E2E_DOPPLER_FAIL_GET lists names whose reads fail like an expired login.
+      if [[ " ${E2E_DOPPLER_FAIL_GET:-} " == *" ${name} "* ]]; then
+        echo "Doppler Error: Unable to authenticate: token not found (HTTP 404 from proxy)" >&2
+        exit 1
+      fi
       line="$(awk -F '\t' -v n="${name}" -v p="${project}" -v c="${config}" \
         '$2 == n && $3 == p && $4 == c { last=$0 } END { print last }' "${secret_db}")"
       if [[ -z "${line}" ]]; then
+        # Like the real CLI: an absent secret is an error unless --no-exit-on-missing-secret is set.
+        if [[ ${missing_ok} -eq 1 ]]; then
+          echo
+          exit 0
+        fi
         exit 1
       fi
       awk -F '\t' '{ print $5 }' <<<"${line}"

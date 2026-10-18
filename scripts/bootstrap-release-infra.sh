@@ -4,6 +4,9 @@ set -euo pipefail
 umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/secret-shell-guard.sh
+source "${ROOT}/scripts/lib/secret-shell-guard.sh"
+secret_shell_refuse_xtrace
 export DOPPLER_PROJECT="${DOPPLER_PROJECT:-hub-framework}"
 export DOPPLER_CONFIG="${DOPPLER_CONFIG:-infra}"
 # shellcheck source=scripts/lib/doppler-secrets.sh
@@ -76,23 +79,15 @@ fi
 export TF_VAR_cloudflare_account_id="${ACCOUNT_ID}"
 export TF_VAR_state_bucket_name="${STATE_BUCKET_DEFAULT}"
 
-if bootstrap_doppler_secret_missing TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE \
-  "${DOPPLER_PROJECT_NAME}" "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}"; then
-  BOOTSTRAP_PASS="$(openssl rand -base64 24)"
-  confirm "Create TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE in Doppler (${DOPPLER_BOOTSTRAP_ADMIN_CONFIG})?"
-  doppler_secret_set_stdin TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE "${BOOTSTRAP_PASS}" \
-    "${DOPPLER_PROJECT_NAME}" "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}"
-fi
+bootstrap_ensure_generated_passphrase TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE \
+  "${DOPPLER_PROJECT_NAME}" "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}" confirm || exit 1
 
 export TF_VAR_bootstrap_state_encryption_passphrase
 TF_VAR_bootstrap_state_encryption_passphrase="$(doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE --plain \
   -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}")"
 
-if bootstrap_doppler_secret_missing TOFU_STATE_ENCRYPTION_PASSPHRASE "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}"; then
-  RELEASE_PASS="$(openssl rand -base64 24)"
-  confirm "Create TOFU_STATE_ENCRYPTION_PASSPHRASE in Doppler (${DOPPLER_INFRA_CONFIG})?"
-  doppler_secret_set_stdin TOFU_STATE_ENCRYPTION_PASSPHRASE "${RELEASE_PASS}"
-fi
+bootstrap_ensure_generated_passphrase TOFU_STATE_ENCRYPTION_PASSPHRASE \
+  "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}" confirm || exit 1
 
 echo "Bootstrap stack (R2 bucket + release scoped credentials; bootstrap state stays local)"
 confirm "Run tofu init/plan/apply for state-bootstrap (creates R2 bucket and release-scoped API token)?"

@@ -53,7 +53,9 @@ Committed config keeps a **single** key provider **`bootstrap`** (no fallback). 
 ./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/state-bootstrap bootstrap
 ```
 
-The script generates a new passphrase, stores it as `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT`, runs the two-hop `TF_ENCRYPTION` rotation, verifies the old passphrase no longer decrypts state, then promotes the new value and deletes `_NEXT`.
+The script generates a new passphrase and stores it as `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT`, then runs the two-hop `TF_ENCRYPTION` rotation. Before promoting, it checks that the committed config decrypts state with the new passphrase and that the old one fails with a decryption error. It then re-uploads the re-encrypted state to `TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP`, so the Doppler backup never depends on the retired passphrase, promotes the new value and deletes `_NEXT`.
+
+A Doppler error (network, login or scope) stops the script before any write; it is never read as a missing secret. The script refuses to run with xtrace on. If a run stops part way, run the same command again: it reuses the staged `_NEXT` and finishes the rotation.
 
 Requires **OpenTofu 1.13.1+**. Proof: `scripts/test/encryption-rotation-test.sh` and `scripts/test/encryption-rotation-mutations-test.sh`.
 
