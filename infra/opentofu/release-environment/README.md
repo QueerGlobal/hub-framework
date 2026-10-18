@@ -10,7 +10,7 @@ Remote state lives in **Cloudflare R2** (S3-compatible). The bucket and scoped c
 
 - OpenTofu **1.10.0+** (state/plan encryption and `use_lockfile` on the S3-compatible backend), tested with **1.10.6**
 - [Doppler CLI](https://docs.doppler.com/docs/cli) logged in, with access to project **`hub-framework`**, config **`infra`**
-- **`GITHUB_TOFU_RELEASE_ENV`** in Doppler before bootstrap (repo **Administration: Read and write**)
+- **`GITHUB_TOFU_RELEASE_ENV`** in Doppler config **`bootstrap-admin`** before bootstrap (repo **Administration: Read and write**)
 
 ## Manual, no API
 
@@ -20,7 +20,7 @@ These inputs cannot be created by the bootstrap script:
 | --- | --- |
 | Cloudflare bootstrap API token | Cloudflare does not expose an API to mint the broad bootstrap token safely; you create it in the dashboard. |
 | GitHub fine-grained `GITHUB_TOFU_RELEASE_ENV` | GitHub does not provide an API to create fine-grained personal access tokens; store the token in Doppler manually. |
-| Doppler login | The Doppler CLI requires an interactive or prior `doppler login`; the script only creates the `hub-framework` project and `infra` config if they are missing. |
+| Doppler login | The Doppler CLI requires an interactive or prior `doppler login`; the script creates the `hub-framework` project, **`infra`**, and **`bootstrap-admin`** configs if they are missing. |
 
 ## One-time setup (before the first Release workflow run)
 

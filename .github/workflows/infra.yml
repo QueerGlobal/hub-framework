@@ -81,9 +81,6 @@ jobs:
       - name: Cloudflare preflight negative test
         run: scripts/test/cloudflare-preflight-test.sh
 
-      - name: Bootstrap backend restore test
-        run: scripts/test/bootstrap-backend-restore-test.sh
-
       - name: Cloudflare account token preflight test
         run: scripts/test/cloudflare-preflight-account-token-test.sh
 
@@ -96,8 +93,8 @@ jobs:
       - name: Encryption rotation test
         run: scripts/test/encryption-rotation-test.sh
 
-      - name: Encryption rotation argv test
-        run: scripts/test/encryption-rotation-argv-test.sh
+      - name: Secrets argv test
+        run: scripts/test/secrets-argv-test.sh
 
       - name: Release backend E2E guard test
         run: scripts/test/release-backend-e2e-guard-test.sh

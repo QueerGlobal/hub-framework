@@ -21,12 +21,12 @@ run "release_environment_apply" {
 
   variables {
     state_encryption_passphrase = "mock-release-passphrase-16"
-    github_owner                       = "QueerGlobal"
-    github_repository                  = "hub-framework"
-    environment_name                   = "release"
-    reviewer_usernames                 = ["mnyon-grandkru"]
-    reviewer_team_slug                 = ""
-    release_branch_pattern             = "main"
+    github_owner                = "QueerGlobal"
+    github_repository           = "hub-framework"
+    environment_name            = "release"
+    reviewer_usernames          = ["mnyon-grandkru"]
+    reviewer_team_slug          = ""
+    release_branch_pattern      = "main"
   }
 
   assert {

@@ -42,12 +42,16 @@ assert_versions_plan_block() {
 copy_stack_to_workdir() {
   local stack_dir=$1
   local workdir=$2
+  local fixture_dir=$3
   shopt -s nullglob
   local f
-  for f in "${stack_dir}"/*.tf "${stack_dir}"/*.tfvars "${stack_dir}"/.terraform.lock.hcl; do
+  for f in "${stack_dir}"/*.tf "${stack_dir}"/.terraform.lock.hcl; do
     [[ -e "${f}" ]] || continue
     cp "${f}" "${workdir}/"
   done
+  if [[ -n "${fixture_dir}" ]]; then
+    cp "${fixture_dir}/plan_leak_probe.tf" "${fixture_dir}/plan-leak.ci.tfvars" "${workdir}/"
+  fi
   shopt -u nullglob
   rm -rf "${workdir}/.terraform" "${workdir}/terraform.tfstate" "${workdir}/terraform.tfstate.backup"
 }
@@ -79,7 +83,8 @@ plan_leak_stack() {
   workdir="$(mktemp -d)"
   TRAP_WORKDIRS+=("${workdir}")
 
-  copy_stack_to_workdir "${stack_dir}" "${workdir}"
+  local fixture_dir="${ROOT}/infra/opentofu/fixtures/plan-leak/${stack_name}"
+  copy_stack_to_workdir "${stack_dir}" "${workdir}" "${fixture_dir}"
   if [[ "${stack_name}" == "release-environment" ]]; then
     prepare_release_workdir_backend "${workdir}"
   fi
@@ -120,7 +125,8 @@ assert_unencrypted_plan_exposes_marker() {
   TRAP_WORKDIRS+=("${workdir}")
   plan_file="${workdir}/unencrypted.tfplan"
 
-  copy_stack_to_workdir "${stack_dir}" "${workdir}"
+  local fixture_dir="${ROOT}/infra/opentofu/fixtures/plan-leak/${stack_name}"
+  copy_stack_to_workdir "${stack_dir}" "${workdir}" "${fixture_dir}"
   if [[ "${stack_name}" == "release-environment" ]]; then
     prepare_release_workdir_backend "${workdir}"
   fi
@@ -176,8 +182,8 @@ BOOTSTRAP_DIR="${ROOT}/infra/opentofu/state-bootstrap"
 RELEASE_DIR="${ROOT}/infra/opentofu/release-environment"
 BOOTSTRAP_MARKER='PLAN-LEAK-MARKER-STATE-BOOTSTRAP-xyzzy-0123456789'
 RELEASE_MARKER='PLAN-LEAK-MARKER-RELEASE-ENV-xyzzy-0123456789'
-BOOTSTRAP_TFVARS="${BOOTSTRAP_DIR}/plan-leak.ci.tfvars"
-RELEASE_TFVARS="${RELEASE_DIR}/plan-leak.ci.tfvars"
+BOOTSTRAP_TFVARS="${ROOT}/infra/opentofu/fixtures/plan-leak/state-bootstrap/plan-leak.ci.tfvars"
+RELEASE_TFVARS="${ROOT}/infra/opentofu/fixtures/plan-leak/release-environment/plan-leak.ci.tfvars"
 
 BOOTSTRAP_ENV=(
   "TF_VAR_bootstrap_state_encryption_passphrase=plan-leak-bootstrap-passphrase-16chars"

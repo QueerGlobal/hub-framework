@@ -1,18 +1,21 @@
 # OpenTofu state bootstrap (Cloudflare R2)
 
-Creates the shared **R2** bucket and a **bucket-scoped** S3-compatible API token used only by the **release-environment** stack. **Bootstrap stack state stays on disk** (local backend) and is backed up to Doppler config **`bootstrap-admin`**, which CI must never read.
+Creates the shared **R2** bucket and a **bucket-scoped** account-owned API token used only by the **release-environment** stack. **Bootstrap stack state stays on disk** (local backend) and is backed up to Doppler config **`bootstrap-admin`**, which CI must never read.
 
 Requires **OpenTofu 1.10.0+** for day-to-day use (**1.13.1+** for passphrase rotation). State and plan encryption use key provider **`bootstrap`** with `enforced = true`.
 
+This stack uses the **Cloudflare Terraform provider v5** and **`cloudflare_account_token`** (account-owned tokens), matching account-level permissions in the dashboard.
+
 ## Cloudflare bootstrap token permissions
 
-Export `CLOUDFLARE_API_TOKEN` before running `scripts/bootstrap-release-infra.sh`. Preflight is **capability-only** (no token policy reads and no account token list API):
+Export an **account-owned** `CLOUDFLARE_API_TOKEN` before running `scripts/bootstrap-release-infra.sh`. Preflight is **capability-only** (no token policy reads and no account token list API):
 
-1. **Verify** the token is **active**: `GET /accounts/{account_id}/tokens/verify`, then `GET /user/tokens/verify` if needed.
-2. **R2 list buckets**: `GET /accounts/{account_id}/r2/buckets?per_page=1` (proves account-scoped R2 access; does not prove Write).
-3. **Permission groups read**: `GET /accounts/{account_id}/tokens/permission_groups?per_page=1` (same catalog read the bootstrap stack uses via `data.cloudflare_api_token_permission_groups`). Grant **Account API Tokens Write** on the bootstrap token so this read succeeds; capability probes treat an effective deny as HTTP **403** and fail closed.
+1. **Account verify** (required): `GET /accounts/{account_id}/tokens/verify` must succeed. User-level tokens are rejected.
+2. **R2 list buckets**: `GET /accounts/{account_id}/r2/buckets?per_page=1` (proves account-scoped R2 access; does **not** prove Workers R2 Storage Write).
+3. **Permission groups catalog read**: `GET /accounts/{account_id}/tokens/permission_groups?per_page=1` (same catalog read as `data.cloudflare_account_api_token_permission_groups`). Requires **Account API Tokens Write** (or Read) on the bootstrap token; effective deny surfaces as HTTP **403**.
+4. **Token create probe**: invalid `POST /accounts/{account_id}/tokens` (fail-fast if **Account API Tokens Write** is missing). A GET on account tokens is **not** used as proof of Write.
 
-**R2 Write** cannot be proven with a list call. If the token only has R2 Read, preflight may still pass; the **first OpenTofu apply** fails closed when creating the bucket (no durable resource change). See `scripts/test/cloudflare-r2-write-fails-closed-test.sh`.
+**Workers R2 Storage Write** cannot be proven read-only. Preflight may pass with R2 list access only; the **first OpenTofu apply** fails closed when creating the bucket or account token if Write is missing. See `scripts/test/cloudflare-r2-write-fails-closed-test.sh`.
 
 Dashboard: **Workers R2 Storage Write** and **Account API Tokens Write** at account scope (API names use **Write**, not dashboard "Edit").
 
@@ -20,8 +23,8 @@ Dashboard: **Workers R2 Storage Write** and **Account API Tokens Write** at acco
 
 | Config | Purpose | CI |
 | --- | --- | --- |
-| `infra` | Release stack remote state, `GITHUB_TOFU_RELEASE_ENV`, release passphrases, `DOPPLER_CI_INFRA_SERVICE_TOKEN` | `DOPPLER_TOKEN` must be a service token scoped to **infra** only |
-| `bootstrap-admin` | Bootstrap passphrases, `TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP` | Must not be readable from CI (`scripts/test/doppler-ci-runtime-guard.sh`) |
+| `infra` | Release stack remote state, release passphrases, `DOPPLER_CI_INFRA_SERVICE_TOKEN` | `DOPPLER_TOKEN` must be a service token scoped to **infra** only |
+| `bootstrap-admin` | Bootstrap passphrases, `GITHUB_TOFU_RELEASE_ENV`, `TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP` | Must not be readable from CI (`scripts/test/doppler-ci-runtime-guard.sh`) |
 
 Release R2 credentials in `infra` cannot overwrite bootstrap state because bootstrap state is **not** stored under those credentials on R2.
 
@@ -30,7 +33,7 @@ Release R2 credentials in `infra` cannot overwrite bootstrap state because boots
 | Input | Reason |
 | --- | --- |
 | Cloudflare bootstrap API token | No API to mint the broad bootstrap token safely. |
-| GitHub fine-grained `GITHUB_TOFU_RELEASE_ENV` | No API to create fine-grained PATs; export or store in Doppler before bootstrap. |
+| GitHub fine-grained `GITHUB_TOFU_RELEASE_ENV` | No API to create fine-grained PATs; export or store in Doppler **`bootstrap-admin`** before bootstrap. |
 | Doppler login | Requires `doppler login`; script creates project/configs idempotently after read-only preflight. |
 
 ## Bootstrap state and incident response

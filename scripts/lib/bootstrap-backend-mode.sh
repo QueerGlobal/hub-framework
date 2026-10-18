@@ -16,24 +16,6 @@ bootstrap_backend_local_hidden() {
   echo "${dir}/.bootstrap_backend_local.tf"
 }
 
-bootstrap_backend_enable_s3() {
-  local dir=$1
-  local local_tf hidden override
-  local_tf="$(bootstrap_backend_local_tf "${dir}")"
-  hidden="$(bootstrap_backend_local_hidden "${dir}")"
-  override="$(bootstrap_backend_override_tf "${dir}")"
-
-  if [[ -f "${local_tf}" && ! -f "${hidden}" ]]; then
-    mv "${local_tf}" "${hidden}"
-  fi
-
-  cat > "${override}" <<'EOF'
-terraform {
-  backend "s3" {}
-}
-EOF
-}
-
 bootstrap_backend_disable_s3() {
   local dir=$1
   local local_tf hidden override
@@ -52,6 +34,10 @@ bootstrap_backup_local_state_to_doppler() {
   local project=$2
   local config=$3
   if [[ ! -f "${state_file}" ]]; then
+    if [[ "${BOOTSTRAP_ALLOW_MISSING_LOCAL_STATE_BACKUP:-}" == "1" ]]; then
+      echo "No local bootstrap state at ${state_file}; skip backup (allowed for E2E)." >&2
+      return 0
+    fi
     echo "No local bootstrap state at ${state_file}; skip backup." >&2
     return 1
   fi

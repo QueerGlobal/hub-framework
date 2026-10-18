@@ -54,5 +54,12 @@ doppler_assert_ci_token_cannot_read_bootstrap_admin() {
     return 1
   fi
 
+  if DOPPLER_TOKEN="${DOPPLER_TOKEN}" doppler secrets get GITHUB_TOFU_RELEASE_ENV \
+    --plain -p "${project}" -c "${bootstrap_config}" >/dev/null 2>&1; then
+    echo "FAIL: DOPPLER_TOKEN can read bootstrap-admin secret GITHUB_TOFU_RELEASE_ENV" >&2
+    echo "Use a service token scoped to ${project}/${infra_config} only." >&2
+    return 1
+  fi
+
   echo "OK: DOPPLER_TOKEN cannot read bootstrap-admin secrets"
 }
