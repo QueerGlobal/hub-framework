@@ -244,6 +244,18 @@ Other key priorities include:
     - Distributed Metrics
     
 
+## Breaking changes
+
+Recent API updates that may require code changes when upgrading:
+
+### `remotehttpservice.NewForwardingService`
+
+`service/target/remotehttpservice.NewForwardingService` now accepts `ForwardingServiceConfig` and returns `(ForwardingService, error)` instead of accepting `interface{}` and returning `ForwardingService` alone. Pass the config struct directly and check the error. See [CHANGELOG.md](CHANGELOG.md) for a before/after example and migration notes.
+
+### Exponential backoff unrecoverable errors
+
+Retry logic stops when `errors.Is(err, util.ErrUnrecoverable)` is true. Wrap terminal failures with `fmt.Errorf("...: %w", util.ErrUnrecoverable)` instead of only embedding `util.UnrecoverableErrorMsg` in the text. A deprecated string match remains for older call sites; see [CHANGELOG.md](CHANGELOG.md).
+
 ## Releases
 
 Version tags and GitHub releases are created with the **Release** workflow (`.github/workflows/release.yml`), not by hand.

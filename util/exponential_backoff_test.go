@@ -65,6 +65,28 @@ func TestExecuteWithBackoff_SuccessOnAttemptNStopsRetrying(t *testing.T) {
 	require.Equal(t, int32(3), calls.Load())
 }
 
+func TestExecuteWithBackoff_DeprecatedUnrecoverableMessageStopsImmediately(t *testing.T) {
+	b := NewBackoff(BackoffConfig{
+		InitialDelay: time.Millisecond,
+		MaxDelay:     time.Second,
+		Multiplier:   2,
+		MaxRetries:   10,
+	})
+	b.sleep = func(time.Duration) {
+		t.Fatal("should not sleep after deprecated unrecoverable message")
+	}
+
+	var calls atomic.Int32
+	err := b.ExecuteWithBackoff(func() error {
+		calls.Add(1)
+		return fmt.Errorf("error unmarshaling response: %s: boom", UnrecoverableErrorMsg)
+	})
+
+	require.Error(t, err)
+	require.Equal(t, int32(1), calls.Load())
+	require.Contains(t, err.Error(), UnrecoverableErrorMsg)
+}
+
 func TestExecuteWithBackoff_UnrecoverableErrorStopsImmediately(t *testing.T) {
 	b := NewBackoff(BackoffConfig{
 		InitialDelay: time.Millisecond,

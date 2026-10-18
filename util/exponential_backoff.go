@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -171,6 +172,11 @@ func (b *Backoff) ExecuteWithBackoff(operation func() error) error {
 		}
 
 		if stderrors.Is(err, ErrUnrecoverable) {
+			b.logUnrecoverable(err)
+			return RedactURLError(err)
+		}
+		// Deprecated: legacy errors that only embed UnrecoverableErrorMsg without wrapping ErrUnrecoverable.
+		if strings.Contains(err.Error(), UnrecoverableErrorMsg) {
 			b.logUnrecoverable(err)
 			return RedactURLError(err)
 		}
