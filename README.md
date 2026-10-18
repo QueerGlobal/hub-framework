@@ -177,6 +177,30 @@ root.
 go test ./...
 ```
 
+### Remote HTTP forwarding configuration
+
+Remote HTTP forwarders (target services and `remote` workflow tasks) share the
+`remoteforward` package. When constructing a forwarder, the following optional
+settings apply:
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `clientTimeout` | duration (seconds in task YAML maps) | HTTP client timeout; defaults to 30s. |
+| `maxResponseBodyBytes` | int | Maximum upstream response body size; default 10 MiB. |
+| `logger` | `*zerolog.Logger` (Go config) | Structured logger; defaults to JSON on stderr. |
+| `sentry.dsn` | string | Sentry DSN; reporting is disabled when empty. |
+| `sentry.environment` | string | Sentry environment tag. |
+| `sentry.release` | string | Sentry release tag. |
+| `sentry.sampleRate` | float | Event sample rate (`0`-`1`); when the DSN is set, `0` or a negative value is treated as `1` (report all events). |
+
+Call `Shutdown()` on the forwarder when the process exits so Sentry events are flushed.
+Invalid forward URLs, over-limit response bodies, and network-level forward failures
+(timeouts, connection refused, and similar) are logged and reported to Sentry when a
+DSN is configured. Events use `stage` and `target_host` tags only; `target_host` is
+the upstream host (including port or IPv6 brackets) with no userinfo, path, or query.
+Error messages sent to logs and Sentry redact forwarded URL paths, query strings, and
+credentials.
+
 ## Roadmap
 
 As noted above, the reasons for building this project are
@@ -219,6 +243,33 @@ Other key priorities include:
     - Distributed Logging
     - Distributed Metrics
     
+
+## Breaking changes
+
+Recent API updates that may require code changes when upgrading:
+
+### `remotehttpservice.NewForwardingService`
+
+`service/target/remotehttpservice.NewForwardingService` now accepts `ForwardingServiceConfig` and returns `(ForwardingService, error)` instead of accepting `interface{}` and returning `ForwardingService` alone. Pass the config struct directly and check the error. See [CHANGELOG.md](CHANGELOG.md) for a before/after example and migration notes.
+
+### Exponential backoff unrecoverable errors
+
+Retry logic stops when `errors.Is(err, util.ErrUnrecoverable)` is true. Wrap terminal failures with `fmt.Errorf("...: %w", util.ErrUnrecoverable)` instead of only embedding `util.UnrecoverableErrorMsg` in the text. A deprecated string match remains for older call sites; see [CHANGELOG.md](CHANGELOG.md).
+
+## Releases
+
+Version tags and GitHub releases are created with the **Release** workflow (`.github/workflows/release.yml`), not by hand.
+
+The workflow runs in the GitHub Actions **release** environment (approval gate only). It does **not** use OpenTofu, Doppler, or R2 credentials; only `github.token` is used to push tags and create releases. **Before the first Release run**, a repository admin runs `./scripts/bootstrap-release-infra.sh` once to apply OpenTofu (R2 state bootstrap, then release-environment). See `infra/opentofu/release-environment/README.md`.
+
+To cut a release after the environment exists:
+
+1. Open the **Actions** tab, choose **Release**, then **Run workflow** on the branch you want to tag (usually `main`).
+2. Enter a semver tag such as `v1.2.3`.
+3. Approve the deployment if your account is a configured reviewer.
+4. The workflow validates the tag name, then runs `scripts/release-gate.sh`. The gate stops the run unless every check on the commit passed (the Go `test` check is required) and the **release** environment requires a reviewer. It then creates an annotated Git tag, pushes it, and opens a GitHub release with generated release notes.
+
+The release job is the only job that requests `contents: write`; other workflows stay read-only.
 
 ## Contributing
 

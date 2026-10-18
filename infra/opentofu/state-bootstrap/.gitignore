@@ -1,0 +1,8 @@
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+*.tfplan
+bootstrap-backend-config.hcl
+backend_override.tf
+.bootstrap_backend_local.tf
+ci-plan-leak.tfplan

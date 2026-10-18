@@ -8,14 +8,17 @@ require (
 	github.com/QueerGlobal/qg-config-go v0.0.2
 	github.com/atombender/go-jsonschema v0.16.0
 	github.com/dgraph-io/badger/v4 v4.3.0
+	github.com/getsentry/sentry-go v0.29.1
 	github.com/go-sql-driver/mysql v1.5.0
-	github.com/google/uuid v1.5.0
+	github.com/google/uuid v1.6.0
 	github.com/hashicorp/raft v1.3.9
 	github.com/labstack/echo/v4 v4.11.4
 	github.com/oapi-codegen/oapi-codegen/v2 v2.3.0
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.26.1
 	github.com/stretchr/testify v1.9.0
+	go.opentelemetry.io/otel v1.30.0
+	go.opentelemetry.io/otel/trace v1.30.0
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
 	gopkg.in/yaml.v2 v2.4.0
 )
@@ -60,9 +63,7 @@ require (
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	go.opentelemetry.io/otel v1.30.0 // indirect
 	go.opentelemetry.io/otel/metric v1.30.0 // indirect
-	go.opentelemetry.io/otel/trace v1.30.0 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.28.0 // indirect

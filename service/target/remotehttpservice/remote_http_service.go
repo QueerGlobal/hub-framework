@@ -2,55 +2,74 @@ package remotehttpservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
+	"time"
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
+	"github.com/QueerGlobal/hub-framework/service/remoteforward"
 	"github.com/QueerGlobal/hub-framework/util"
+	"github.com/rs/zerolog"
 )
 
 type ForwardingService struct {
 	Host       string
 	PathPrefix string
 	backoff    *util.Backoff
+	httpClient *http.Client
+	forward    remoteforward.ForwardConfig
 }
 
 type ForwardingServiceConfig struct {
-	Host          string
-	PathPrefix    string
-	BackoffConfig util.BackoffConfig
+	Host                 string
+	PathPrefix           string
+	BackoffConfig        util.BackoffConfig
+	ClientTimeout        time.Duration
+	MaxResponseBodyBytes int64
+	Logger               *zerolog.Logger
+	Sentry               remoteforward.SentryConfig
 }
 
-func NewForwardingService(config interface{}) ForwardingService {
+func NewForwardingService(cfg ForwardingServiceConfig) (ForwardingService, error) {
 	svc := ForwardingService{}
 
-	cfg := config.(ForwardingServiceConfig)
-
 	svc.Host = cfg.Host
+	svc.PathPrefix = remoteforward.NormalizePathPrefix(cfg.PathPrefix)
 
-	pathPrefix := cfg.PathPrefix
-
-	if len(pathPrefix) > 0 {
-		// Prepend "/" if it doesn't exist
-		if !strings.HasPrefix(pathPrefix, "/") {
-			pathPrefix = "/" + pathPrefix
-		}
-
-		// Append "/" if it doesn't exist
-		if !strings.HasSuffix(pathPrefix, "/") {
-			pathPrefix = pathPrefix + "/"
-		}
+	backoffConfig := cfg.BackoffConfig
+	backoffConfig.TargetURL = cfg.Host
+	if backoffConfig.Logger == nil {
+		backoffConfig.Logger = cfg.Logger
 	}
-
-	svc.PathPrefix = pathPrefix
-
-	backoff := util.NewBackoff(cfg.BackoffConfig)
+	backoff := util.NewBackoff(backoffConfig)
 	svc.backoff = backoff
+	svc.httpClient = remoteforward.NewHTTPClient(cfg.ClientTimeout)
+	settings := remoteforward.ForwardSettings{
+		MaxResponseBodyBytes: cfg.MaxResponseBodyBytes,
+		Logger:               cfg.Logger,
+		Sentry:               cfg.Sentry,
+		UpstreamHost:         cfg.Host,
+	}
+	forwardCfg, err := remoteforward.NewForwardConfigResilient(settings)
+	if err != nil {
+		if cfg.Logger != nil {
+			cfg.Logger.Error().Err(err).Msg("remote forward config failed")
+		} else {
+			log := remoteforward.DefaultLogger()
+			log.Error().Err(err).Msg("remote forward config failed")
+		}
+		return ForwardingService{}, err
+	}
+	svc.forward = forwardCfg
 
-	return svc
+	return svc, nil
+}
+
+// Shutdown flushes monitoring hooks (for example Sentry) for this forwarder.
+func (fs *ForwardingService) Shutdown() {
+	fs.forward.Shutdown()
 }
 
 func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.ServiceResponse, error) {
@@ -62,21 +81,29 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 		if err != nil {
 			return err
 		}
-		defer response.Body.Close()
 
-		body, err := io.ReadAll(response.Body)
+		parsed, err := remoteforward.ReadAndValidateResponse(response, fs.forward)
 		if err != nil {
-			return fmt.Errorf("%s: %w", util.UnrecoverableErrorMsg, err)
+			return err
 		}
 
-		if err := json.Unmarshal(body, &serviceResponse); err != nil {
-			return fmt.Errorf("error unmarshaling response: %s: %w", util.UnrecoverableErrorMsg, err)
+		var payload map[string]interface{}
+		if err := json.Unmarshal(parsed.GetBody(), &payload); err != nil {
+			return fmt.Errorf("error unmarshaling response: %w: %w", util.ErrUnrecoverable, err)
+		}
+
+		serviceResponse = &forwardedJSONResponse{
+			meta: parsed.GetResponseMeta(),
+			data: payload,
 		}
 
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		if remoteforward.ShouldReportExhaustedHTTPFailure(err) {
+			fs.forward.ReportHTTPFailure(err)
+		}
+		return nil, util.RedactURLError(err)
 	}
 
 	return serviceResponse, nil
@@ -88,25 +115,21 @@ func (fs *ForwardingService) forwardRequest(request entity.ServiceRequest) (*htt
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	requestPath := ""
-	if request.GetURL() != nil {
-		requestPath = request.GetURL().Path
+	urlString, err := remoteforward.BuildForwardURL(fs.Host, fs.PathPrefix, request.GetURL(), fs.forward)
+	if err != nil {
+		return nil, err
 	}
 
-	urlString := fs.Host + fs.PathPrefix + requestPath
-
-	req, err := http.NewRequest("POST", urlString, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, urlString, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// Perform the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := fs.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to perform HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to perform HTTP request: %w", util.RedactURLError(err))
 	}
 
 	return resp, nil
