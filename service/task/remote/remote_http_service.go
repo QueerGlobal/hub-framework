@@ -22,6 +22,7 @@ type ForwardingService struct {
 	name       string
 	backoff    *util.Backoff
 	httpClient *http.Client
+	forward    remoteforward.Options
 }
 
 func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
@@ -68,9 +69,25 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 		clientTimeout = time.Duration(timeoutSeconds * float64(time.Second))
 	}
 
+	var maxResponseBodyBytes int64
+	if maxBody, ok := config["maxResponseBodyBytes"].(float64); ok {
+		maxResponseBodyBytes = int64(maxBody)
+	}
+
+	var sentryDSN string
+	if sentryCfg, ok := config["sentry"].(map[string]interface{}); ok {
+		if dsn, ok := sentryCfg["dsn"].(string); ok {
+			sentryDSN = dsn
+		}
+	}
+
 	backoff := util.NewBackoff(backoffConfig)
 	svc.backoff = backoff
 	svc.httpClient = remoteforward.NewHTTPClient(clientTimeout)
+	svc.forward = remoteforward.Options{
+		MaxResponseBodyBytes: maxResponseBodyBytes,
+		ErrorReporter:        remoteforward.NewErrorReporter(remoteforward.SentryConfig{DSN: sentryDSN}),
+	}
 
 	return &svc, nil
 }
@@ -82,7 +99,7 @@ func (fs *ForwardingService) Apply(ctx context.Context, request entity.ServiceRe
 			return err
 		}
 
-		responseObj, err := remoteforward.ReadAndValidateResponse(response)
+		responseObj, err := remoteforward.ReadAndValidateResponse(response, fs.forward)
 		if err != nil {
 			return err
 		}
@@ -108,12 +125,10 @@ func (fs *ForwardingService) forwardRequest(ctx context.Context, request entity.
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	requestPath := ""
-	if request.GetURL() != nil {
-		requestPath = request.GetURL().Path
+	urlString, err := remoteforward.BuildForwardURL(fs.Host, fs.PathPrefix, request.GetURL(), fs.forward)
+	if err != nil {
+		return nil, err
 	}
-
-	urlString := remoteforward.JoinHostPrefixPath(fs.Host, fs.PathPrefix, requestPath)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, urlString, bytes.NewBuffer(jsonData))
 	if err != nil {

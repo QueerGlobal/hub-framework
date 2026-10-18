@@ -19,13 +19,16 @@ type ForwardingService struct {
 	PathPrefix string
 	backoff    *util.Backoff
 	httpClient *http.Client
+	forward    remoteforward.Options
 }
 
 type ForwardingServiceConfig struct {
-	Host          string
-	PathPrefix    string
-	BackoffConfig util.BackoffConfig
-	ClientTimeout time.Duration
+	Host                 string
+	PathPrefix           string
+	BackoffConfig        util.BackoffConfig
+	ClientTimeout        time.Duration
+	MaxResponseBodyBytes int64
+	Sentry               remoteforward.SentryConfig
 }
 
 func NewForwardingService(config interface{}) ForwardingService {
@@ -54,6 +57,10 @@ func NewForwardingService(config interface{}) ForwardingService {
 	backoff := util.NewBackoff(cfg.BackoffConfig)
 	svc.backoff = backoff
 	svc.httpClient = remoteforward.NewHTTPClient(cfg.ClientTimeout)
+	svc.forward = remoteforward.Options{
+		MaxResponseBodyBytes: cfg.MaxResponseBodyBytes,
+		ErrorReporter:        remoteforward.NewErrorReporter(cfg.Sentry),
+	}
 
 	return svc
 }
@@ -68,7 +75,7 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 			return err
 		}
 
-		parsed, err := remoteforward.ReadAndValidateResponse(response)
+		parsed, err := remoteforward.ReadAndValidateResponse(response, fs.forward)
 		if err != nil {
 			return err
 		}
@@ -89,12 +96,10 @@ func (fs *ForwardingService) forwardRequest(request entity.ServiceRequest) (*htt
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	requestPath := ""
-	if request.GetURL() != nil {
-		requestPath = request.GetURL().Path
+	urlString, err := remoteforward.BuildForwardURL(fs.Host, fs.PathPrefix, request.GetURL(), fs.forward)
+	if err != nil {
+		return nil, err
 	}
-
-	urlString := remoteforward.JoinHostPrefixPath(fs.Host, fs.PathPrefix, requestPath)
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, urlString, bytes.NewBuffer(jsonData))
 	if err != nil {

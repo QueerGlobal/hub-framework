@@ -124,6 +124,64 @@ func TestForwardingService_NoDoubleSlashInForwardedPath(t *testing.T) {
 	assert.False(t, strings.Contains(seenPath, "//"))
 }
 
+func TestForwardingService_ResponseBodyUnderLimit(t *testing.T) {
+	const limit int64 = 200
+	payload := strings.Repeat("z", int(limit-1))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(payload))
+	}))
+	t.Cleanup(ts.Close)
+
+	task, err := NewForwardingService(map[string]interface{}{
+		"host":                   ts.URL,
+		"pathprefix":             "api",
+		"clientTimeout":          float64(1),
+		"maxResponseBodyBytes":   float64(limit),
+		"backoff": map[string]interface{}{
+			"initialDelay": float64(0.005),
+			"maxDelay":     float64(0.01),
+			"multiplier":   float64(1.0),
+			"maxRetries":   float64(1),
+		},
+	})
+	require.NoError(t, err)
+	req := testRequest("/v1/resource")
+
+	err = task.Apply(context.Background(), req)
+	require.NoError(t, err)
+	assert.Len(t, req.GetResponse().GetBody(), int(limit-1))
+}
+
+func TestForwardingService_ResponseBodyOverLimit(t *testing.T) {
+	const limit int64 = 32
+	payload := strings.Repeat("w", int(limit+1))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(payload))
+	}))
+	t.Cleanup(ts.Close)
+
+	task, err := NewForwardingService(map[string]interface{}{
+		"host":                 ts.URL,
+		"pathprefix":           "api",
+		"clientTimeout":        float64(1),
+		"maxResponseBodyBytes": float64(limit),
+		"backoff": map[string]interface{}{
+			"initialDelay": float64(0.005),
+			"maxDelay":     float64(0.01),
+			"multiplier":   float64(1.0),
+			"maxRetries":   float64(1),
+		},
+	})
+	require.NoError(t, err)
+	req := testRequest("/v1/resource")
+
+	err = task.Apply(context.Background(), req)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds limit")
+}
+
 func TestForwardingService_ClientTimeout(t *testing.T) {
 	var calls int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

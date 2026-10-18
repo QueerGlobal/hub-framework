@@ -120,6 +120,51 @@ func TestForwardingService_NoDoubleSlashInForwardedPath(t *testing.T) {
 	assert.False(t, strings.Contains(seenPath, "//"))
 }
 
+func TestForwardingService_ResponseBodyUnderLimit(t *testing.T) {
+	const limit int64 = 256
+	payload := strings.Repeat("x", int(limit-1))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(payload))
+	}))
+	t.Cleanup(ts.Close)
+
+	svc := NewForwardingService(ForwardingServiceConfig{
+		Host:                 ts.URL,
+		PathPrefix:           "api",
+		BackoffConfig:        testBackoff(1),
+		ClientTimeout:        time.Second,
+		MaxResponseBodyBytes: limit,
+	})
+
+	resp, err := svc.Apply(testRequest("/v1/resource"))
+	require.NoError(t, err)
+	assert.Len(t, resp.GetBody(), int(limit-1))
+}
+
+func TestForwardingService_ResponseBodyOverLimit(t *testing.T) {
+	const limit int64 = 64
+	payload := strings.Repeat("y", int(limit+1))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(payload))
+	}))
+	t.Cleanup(ts.Close)
+
+	svc := NewForwardingService(ForwardingServiceConfig{
+		Host:                 ts.URL,
+		PathPrefix:           "api",
+		BackoffConfig:        testBackoff(1),
+		ClientTimeout:        time.Second,
+		MaxResponseBodyBytes: limit,
+	})
+
+	_, err := svc.Apply(testRequest("/v1/resource"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds limit")
+	assert.Contains(t, err.Error(), util.UnrecoverableErrorMsg)
+}
+
 func TestForwardingService_ClientTimeout(t *testing.T) {
 	var calls int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
