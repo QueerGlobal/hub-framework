@@ -47,16 +47,16 @@ func NewForwardConfig(settings ForwardSettings) (ForwardConfig, error) {
 		maxResponseBodyBytes: settings.MaxResponseBodyBytes,
 		logger:               *logger,
 		reporter:             reporter,
-		targetHostTag:        TargetHostTag(settings.UpstreamHost),
+		targetHostTag:        util.TargetHostTag(settings.UpstreamHost),
 		shutdown:             shutdown,
 	}, nil
 }
 
 // NewForwardConfigResilient returns ForwardConfig and logs a warning if Sentry initialization fails.
-func NewForwardConfigResilient(settings ForwardSettings) ForwardConfig {
+func NewForwardConfigResilient(settings ForwardSettings) (ForwardConfig, error) {
 	cfg, err := NewForwardConfig(settings)
 	if err == nil {
-		return cfg
+		return cfg, nil
 	}
 	logger := settings.Logger
 	if logger == nil {
@@ -67,9 +67,9 @@ func NewForwardConfigResilient(settings ForwardSettings) ForwardConfig {
 	settings.Sentry = SentryConfig{}
 	cfg, err = NewForwardConfig(settings)
 	if err != nil {
-		panic(err)
+		return ForwardConfig{}, fmt.Errorf("forward config without sentry: %w", err)
 	}
-	return cfg
+	return cfg, nil
 }
 
 // Shutdown flushes pending Sentry events when a DSN-backed reporter is configured.
@@ -108,15 +108,6 @@ func (c ForwardConfig) logLimitExceeded(limit int64) {
 
 func (c ForwardConfig) logInvalidForwardURL(reason string) {
 	c.logger.Warn().Str("reason", reason).Str("target_host", c.targetHostTag).Msg("invalid remote forward URL")
-}
-
-// TargetHostTag returns the upstream host for monitoring tags (host:port or [ipv6]:port; no userinfo, path, or query).
-func TargetHostTag(hostURL string) string {
-	parsed, err := url.Parse(hostURL)
-	if err != nil || parsed.Host == "" {
-		return ""
-	}
-	return parsed.Host
 }
 
 // redactedHostURL returns scheme and host for error messages (no userinfo, path, or query).

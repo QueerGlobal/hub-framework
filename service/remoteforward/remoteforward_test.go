@@ -125,7 +125,7 @@ func TestSentryReporter_InvalidForwardURLNoSecretsOrQuery(t *testing.T) {
 	cfg := ForwardConfig{
 		logger:        DefaultLogger(),
 		reporter:      reporter,
-		targetHostTag: TargetHostTag("http://apiuser:topsecret@upstream.example:8080"),
+		targetHostTag: util.TargetHostTag("http://apiuser:topsecret@upstream.example:8080"),
 	}
 
 	reqURL, err := url.Parse("http://evil.example/steal?token=leaked&x=1")
@@ -199,6 +199,6 @@ func TestBuildForwardURL_InvalidHostNoCredentialLeak(t *testing.T) {
 }
 
 func TestTargetHostTag_StripsCredentials(t *testing.T) {
-	assert.Equal(t, "upstream.example", TargetHostTag("http://user:pass@upstream.example/path?x=1"))
-	assert.Equal(t, "[::1]:8080", TargetHostTag("http://user:pass@[::1]:8080/path?x=1"))
+	assert.Equal(t, "upstream.example", util.TargetHostTag("http://user:pass@upstream.example/path?x=1"))
+	assert.Equal(t, "[::1]:8080", util.TargetHostTag("http://user:pass@[::1]:8080/path?x=1"))
 }

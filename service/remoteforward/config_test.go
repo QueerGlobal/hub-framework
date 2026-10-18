@@ -13,11 +13,12 @@ func TestNewForwardConfigResilient_InvalidSentryDSN(t *testing.T) {
 	var buf bytes.Buffer
 	log := zerolog.New(&buf).With().Timestamp().Logger()
 
-	cfg := NewForwardConfigResilient(ForwardSettings{
+	cfg, err := NewForwardConfigResilient(ForwardSettings{
 		Logger:       &log,
 		UpstreamHost: "http://upstream.example",
 		Sentry:       SentryConfig{DSN: "not-a-valid-sentry-dsn"},
 	})
+	require.NoError(t, err)
 
 	_, ok := cfg.reporter.(noopErrorReporter)
 	assert.True(t, ok)
@@ -26,8 +27,9 @@ func TestNewForwardConfigResilient_InvalidSentryDSN(t *testing.T) {
 }
 
 func TestNewForwardConfigResilient_ValidWithoutSentry(t *testing.T) {
-	cfg := NewForwardConfigResilient(ForwardSettings{
+	cfg, err := NewForwardConfigResilient(ForwardSettings{
 		UpstreamHost: "http://upstream.example",
 	})
+	require.NoError(t, err)
 	require.NotNil(t, cfg.reporter)
 }

@@ -12,7 +12,6 @@ import (
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/service/remoteforward"
 	"github.com/QueerGlobal/hub-framework/util"
-	"github.com/getsentry/sentry-go"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -91,10 +90,6 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 			sentrySettings.SampleRate = sampleRate
 		}
 	}
-	if transport, ok := config["sentryTransport"].(sentry.Transport); ok {
-		sentrySettings.Transport = transport
-	}
-
 	var logger *zerolog.Logger
 	if logCfg, ok := config["logger"].(*zerolog.Logger); ok {
 		logger = logCfg
@@ -107,14 +102,50 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 	backoff := util.NewBackoff(backoffConfig)
 	svc.backoff = backoff
 	svc.httpClient = remoteforward.NewHTTPClient(clientTimeout)
-	svc.forward = remoteforward.NewForwardConfigResilient(remoteforward.ForwardSettings{
+	forwardCfg, err := remoteforward.NewForwardConfigResilient(remoteforward.ForwardSettings{
 		MaxResponseBodyBytes: maxResponseBodyBytes,
 		Logger:               logger,
 		Sentry:               sentrySettings,
 		UpstreamHost:         svc.Host,
 	})
+	if err != nil {
+		return nil, err
+	}
+	svc.forward = forwardCfg
 
 	return &svc, nil
+}
+
+// NewForwardingServiceWithSettings builds a remote forwarder task from explicit forward settings (for tests).
+func NewForwardingServiceWithSettings(
+	host string,
+	pathPrefix string,
+	settings remoteforward.ForwardSettings,
+	backoffConfig util.BackoffConfig,
+	clientTimeout time.Duration,
+) (entity.Task, error) {
+	if len(pathPrefix) > 0 {
+		if !strings.HasPrefix(pathPrefix, "/") {
+			pathPrefix = "/" + pathPrefix
+		}
+		if !strings.HasSuffix(pathPrefix, "/") {
+			pathPrefix = pathPrefix + "/"
+		}
+	}
+	settings.UpstreamHost = host
+	forwardCfg, err := remoteforward.NewForwardConfig(settings)
+	if err != nil {
+		return nil, err
+	}
+	backoffConfig.TargetURL = host
+	backoff := util.NewBackoff(backoffConfig)
+	return &ForwardingService{
+		Host:       host,
+		PathPrefix: pathPrefix,
+		backoff:    backoff,
+		httpClient: remoteforward.NewHTTPClient(clientTimeout),
+		forward:    forwardCfg,
+	}, nil
 }
 
 // Shutdown flushes monitoring hooks (for example Sentry) for this forwarder.
@@ -139,7 +170,9 @@ func (fs *ForwardingService) Apply(ctx context.Context, request entity.ServiceRe
 		return nil
 	})
 	if err != nil {
-		fs.forward.ReportHTTPFailure(err)
+		if remoteforward.ShouldReportExhaustedHTTPFailure(err) {
+			fs.forward.ReportHTTPFailure(err)
+		}
 		return util.RedactURLError(err)
 	}
 

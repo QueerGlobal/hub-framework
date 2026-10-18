@@ -91,9 +91,10 @@ func resolveForwardReference(base *url.URL, requestURL *url.URL, joinedPath stri
 }
 
 func (cfg ForwardConfig) failInvalidForwardURL(err error) error {
+	wrapped := fmt.Errorf("%s: %w", util.UnrecoverableErrorMsg, err)
 	cfg.logInvalidForwardURL(err.Error())
-	cfg.reportError(err, "build_forward_url")
-	return err
+	cfg.reportError(wrapped, "build_forward_url")
+	return wrapped
 }
 
 func pathSegments(path string) []string {

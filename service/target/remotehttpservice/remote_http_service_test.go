@@ -11,60 +11,18 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/service/remoteforward"
+	"github.com/QueerGlobal/hub-framework/service/remoteforward/remoteforwardtest"
 	"github.com/QueerGlobal/hub-framework/util"
-	"github.com/getsentry/sentry-go"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-type recordingSentryTransport struct {
-	mu     sync.Mutex
-	events []*sentry.Event
-}
-
-func (t *recordingSentryTransport) Flush(time.Duration) bool { return true }
-
-func (t *recordingSentryTransport) Configure(sentry.ClientOptions) {}
-
-func (t *recordingSentryTransport) SendEvent(event *sentry.Event) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.events = append(t.events, event)
-}
-
-func (t *recordingSentryTransport) Events() []*sentry.Event {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	out := make([]*sentry.Event, len(t.events))
-	copy(out, t.events)
-	return out
-}
-
-func assertNoForwardURLSecrets(t *testing.T, parts ...string) {
-	t.Helper()
-	for _, part := range parts {
-		assert.NotContains(t, part, "SECRET123")
-		assert.NotContains(t, part, "secret-path")
-		assert.NotContains(t, part, "forwarduser")
-		assert.NotContains(t, part, "forwardpass")
-	}
-}
-
-func assertSentryEventRedacted(t *testing.T, event *sentry.Event) {
-	t.Helper()
-	require.NotEmpty(t, event.Exception)
-	for _, exc := range event.Exception {
-		assertNoForwardURLSecrets(t, exc.Value)
-	}
-}
 
 func assertTimeoutDetectable(t *testing.T, err error) {
 	t.Helper()
@@ -255,8 +213,87 @@ func TestForwardingService_ResponseBodyOverLimit(t *testing.T) {
 	assert.Contains(t, err.Error(), util.UnrecoverableErrorMsg)
 }
 
+func TestForwardingService_InvalidForwardHostReportsExactlyOneSentryEvent(t *testing.T) {
+	transport := remoteforwardtest.NewRecordingSentryTransport()
+	const badHost = "http://forwarduser:forwardpass@%zz"
+
+	svc := NewForwardingService(ForwardingServiceConfig{
+		Host:          badHost,
+		PathPrefix:    "api",
+		BackoffConfig: testBackoff(3),
+		ClientTimeout: time.Second,
+		Sentry: remoteforward.SentryConfig{
+			DSN:       "https://public@sentry.io/1",
+			Transport: transport,
+		},
+	})
+	t.Cleanup(svc.Shutdown)
+
+	_, err := svc.Apply(testRequest("/v1/resource"))
+	require.Error(t, err)
+	require.Len(t, transport.Events(), 1, "invalid forward host should report exactly one Sentry event")
+	assert.Equal(t, "build_forward_url", transport.Events()[0].Tags["stage"])
+}
+
+func TestForwardingService_OversizedResponseReportsExactlyOneSentryEvent(t *testing.T) {
+	const limit int64 = 32
+	payload := strings.Repeat("w", int(limit+1))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(payload))
+	}))
+	t.Cleanup(ts.Close)
+
+	transport := remoteforwardtest.NewRecordingSentryTransport()
+	svc := NewForwardingService(ForwardingServiceConfig{
+		Host:                 ts.URL,
+		PathPrefix:           "api",
+		BackoffConfig:        testBackoff(3),
+		ClientTimeout:        time.Second,
+		MaxResponseBodyBytes: limit,
+		Sentry: remoteforward.SentryConfig{
+			DSN:       "https://public@sentry.io/1",
+			Transport: transport,
+		},
+	})
+	t.Cleanup(svc.Shutdown)
+
+	_, err := svc.Apply(testRequest("/v1/resource"))
+	require.Error(t, err)
+	require.Len(t, transport.Events(), 1, "oversized upstream body should report exactly one Sentry event")
+	assert.Equal(t, "read_response_body", transport.Events()[0].Tags["stage"])
+}
+
+func TestForwardingService_NotFoundReportsNoSentryEvents(t *testing.T) {
+	var calls atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`not found`))
+	}))
+	t.Cleanup(ts.Close)
+
+	transport := remoteforwardtest.NewRecordingSentryTransport()
+	svc := NewForwardingService(ForwardingServiceConfig{
+		Host:          ts.URL,
+		PathPrefix:    "api",
+		BackoffConfig: testBackoff(3),
+		ClientTimeout: time.Second,
+		Sentry: remoteforward.SentryConfig{
+			DSN:       "https://public@sentry.io/1",
+			Transport: transport,
+		},
+	})
+	t.Cleanup(svc.Shutdown)
+
+	_, err := svc.Apply(testRequest("/v1/resource"))
+	require.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load())
+	assert.Empty(t, transport.Events(), "4xx responses must not emit Sentry events")
+}
+
 func TestForwardingService_NetworkTimeoutRedactsURLInErrorLogsAndSentry(t *testing.T) {
-	transport := &recordingSentryTransport{}
+	transport := remoteforwardtest.NewRecordingSentryTransport()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
@@ -289,17 +326,17 @@ func TestForwardingService_NetworkTimeoutRedactsURLInErrorLogsAndSentry(t *testi
 	_, err = svc.Apply(req)
 	require.Error(t, err)
 
-	assertNoForwardURLSecrets(t, err.Error(), logBuf.String())
+	remoteforwardtest.AssertNoForwardURLSecrets(t, err.Error(), logBuf.String())
 	assertTimeoutDetectable(t, err)
 
 	events := transport.Events()
 	require.Len(t, events, 1, "network give-up should report exactly one Sentry event")
-	assertSentryEventRedacted(t, events[0])
+	remoteforwardtest.AssertSentryEventRedacted(t, events[0])
 	assert.Equal(t, "http_request", events[0].Tags["stage"])
 }
 
 func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *testing.T) {
-	transport := &recordingSentryTransport{}
+	transport := remoteforwardtest.NewRecordingSentryTransport()
 	hostWithCreds := "http://forwarduser:forwardpass@127.0.0.1:1"
 
 	var logBuf bytes.Buffer
@@ -324,15 +361,15 @@ func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *te
 	_, err := svc.Apply(req)
 	require.Error(t, err)
 
-	assertNoForwardURLSecrets(t, err.Error(), logBuf.String())
+	remoteforwardtest.AssertNoForwardURLSecrets(t, err.Error(), logBuf.String())
 
 	events := transport.Events()
 	require.Len(t, events, 1, "connection refused give-up should report exactly one Sentry event")
-	assertSentryEventRedacted(t, events[0])
+	remoteforwardtest.AssertSentryEventRedacted(t, events[0])
 }
 
 func TestForwardingService_RetrySuccessReportsNoSentryEvents(t *testing.T) {
-	transport := &recordingSentryTransport{}
+	transport := remoteforwardtest.NewRecordingSentryTransport()
 	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) < 2 {
@@ -364,7 +401,7 @@ func TestForwardingService_RetrySuccessReportsNoSentryEvents(t *testing.T) {
 }
 
 func TestForwardingService_ClientTimeoutReportsExactlyOneSentryEvent(t *testing.T) {
-	transport := &recordingSentryTransport{}
+	transport := remoteforwardtest.NewRecordingSentryTransport()
 	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -390,7 +427,7 @@ func TestForwardingService_ClientTimeoutReportsExactlyOneSentryEvent(t *testing.
 	require.Error(t, err)
 	assert.Equal(t, int32(2), calls.Load())
 	require.Len(t, transport.Events(), 1, "timeout give-up after retries should report exactly one Sentry event")
-	assertSentryEventRedacted(t, transport.Events()[0])
+	remoteforwardtest.AssertSentryEventRedacted(t, transport.Events()[0])
 }
 
 func TestForwardingService_ClientTimeout(t *testing.T) {

@@ -70,7 +70,17 @@ func NewForwardingService(config interface{}) ForwardingService {
 		Sentry:               cfg.Sentry,
 		UpstreamHost:         cfg.Host,
 	}
-	svc.forward = remoteforward.NewForwardConfigResilient(settings)
+	forwardCfg, err := remoteforward.NewForwardConfigResilient(settings)
+	if err != nil {
+		if cfg.Logger != nil {
+			cfg.Logger.Error().Err(err).Msg("remote forward config failed")
+		}
+		forwardCfg, _ = remoteforward.NewForwardConfig(remoteforward.ForwardSettings{
+			Logger:       cfg.Logger,
+			UpstreamHost: cfg.Host,
+		})
+	}
+	svc.forward = forwardCfg
 
 	return svc
 }
@@ -108,7 +118,9 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 		return nil
 	})
 	if err != nil {
-		fs.forward.ReportHTTPFailure(err)
+		if remoteforward.ShouldReportExhaustedHTTPFailure(err) {
+			fs.forward.ReportHTTPFailure(err)
+		}
 		return nil, util.RedactURLError(err)
 	}
 
