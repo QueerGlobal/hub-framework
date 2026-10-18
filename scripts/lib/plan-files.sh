@@ -14,5 +14,5 @@ cleanup_plan_files() {
 }
 
 install_plan_file_trap() {
-  trap cleanup_plan_files EXIT
+  :
 }
