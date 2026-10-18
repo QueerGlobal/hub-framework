@@ -8,7 +8,7 @@ Remote state lives in **Cloudflare R2** (S3-compatible). The bucket and scoped c
 
 ## Prerequisites
 
-- OpenTofu **1.8+** (variable-based state encryption) — tested with **1.10.6**
+- OpenTofu **1.8+** (variable-based state encryption), tested with **1.10.6**
 - [Doppler CLI](https://docs.doppler.com/docs/cli) with access to project **`hub-framework`**, config **`infra`**
 - After bootstrap: **`GITHUB_TOFU_RELEASE_ENV`** in Doppler (repo **Administration: Read and write**)
 

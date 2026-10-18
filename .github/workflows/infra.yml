@@ -26,7 +26,19 @@ jobs:
 
       - name: Install OpenTofu
         run: |
-          curl -fsSL -o /tmp/tofu.zip "https://github.com/opentofu/opentofu/releases/download/v1.10.6/tofu_1.10.6_linux_amd64.zip"
+          TOFU_VERSION="1.10.6"
+          TOFU_ZIP="tofu_${TOFU_VERSION}_linux_amd64.zip"
+          BASE_URL="https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}"
+          curl -fsSL -o /tmp/tofu.zip "${BASE_URL}/${TOFU_ZIP}"
+          curl -fsSL -o /tmp/tofu.sha256sums "${BASE_URL}/tofu_${TOFU_VERSION}_SHA256SUMS"
+          EXPECTED="$(grep "${TOFU_ZIP}" /tmp/tofu.sha256sums | awk '{print $1}')"
+          ACTUAL="$(sha256sum /tmp/tofu.zip | awk '{print $1}')"
+          if [[ -z "${EXPECTED}" || "${EXPECTED}" != "${ACTUAL}" ]]; then
+            echo "OpenTofu zip SHA256 mismatch for ${TOFU_ZIP}" >&2
+            echo "expected: ${EXPECTED}" >&2
+            echo "actual:   ${ACTUAL}" >&2
+            exit 1
+          fi
           unzip -p /tmp/tofu.zip tofu | sudo tee /usr/local/bin/tofu >/dev/null
           sudo chmod +x /usr/local/bin/tofu
           tofu version
