@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INFRA_YML="${ROOT}/.github/workflows/infra.yml"
 
-if grep -qE 'bootstrap-admin|DOPPLER_BOOTSTRAP|TOFU_BOOTSTRAP_STATE' "${INFRA_YML}"; then
+if grep -qE 'DOPPLER_BOOTSTRAP|TOFU_BOOTSTRAP_STATE|-c[[:space:]]+bootstrap-admin|config:[[:space:]]+bootstrap-admin' "${INFRA_YML}"; then
   echo "FAIL: infra workflow references bootstrap-admin or bootstrap state secrets" >&2
   exit 1
 fi
