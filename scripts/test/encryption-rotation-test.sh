@@ -15,9 +15,9 @@ cp "${FIXTURE}/versions.initial.tf" "${WORKDIR}/versions.tf"
 
 (
   cd "${WORKDIR}"
-  tofu init -input=false >/dev/null
   export TF_VAR_passphrase_legacy="${LEGACY}"
   export TF_VAR_passphrase_primary="${PRIMARY}"
+  tofu init -input=false >/dev/null
   tofu apply -input=false -auto-approve >/dev/null
 )
 

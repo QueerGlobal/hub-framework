@@ -1,6 +1,10 @@
 # shellcheck shell=bash
 # Preflight checks for bootstrap-release-infra.sh (read-only; no infrastructure writes).
 
+_PREFLIGHT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/cloudflare-preflight-permissions.sh
+source "${_PREFLIGHT_LIB_DIR}/cloudflare-preflight-permissions.sh"
+
 preflight_require_commands() {
   local c
   for c in "$@"; do
@@ -63,38 +67,62 @@ preflight_github_tofu_release_env() {
   return 1
 }
 
+preflight_cloudflare_account_id_resolved() {
+  local project=$1
+  local config=$2
+  local from_doppler
+  if [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+    printf '%s' "${CLOUDFLARE_ACCOUNT_ID}"
+    return 0
+  fi
+  if preflight_doppler_project_exists "${project}"; then
+    from_doppler="$(doppler secrets get CLOUDFLARE_ACCOUNT_ID --plain -p "${project}" -c "${config}" 2>/dev/null || true)"
+    if [[ -n "${from_doppler}" ]]; then
+      printf '%s' "${from_doppler}"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+preflight_cloudflare_account_id_readonly() {
+  local project=$1
+  local config=$2
+  local account_id
+  account_id="$(preflight_cloudflare_account_id_resolved "${project}" "${config}" || true)"
+  if [[ -z "${account_id}" ]]; then
+    echo "Set CLOUDFLARE_ACCOUNT_ID or store CLOUDFLARE_ACCOUNT_ID in Doppler ${project}/${config} before bootstrap." >&2
+    return 1
+  fi
+}
+
+# Read-only validation of all inputs required before any Doppler project/config create.
+preflight_bootstrap_inputs_readonly() {
+  local project=$1
+  local infra_config=$2
+
+  preflight_doppler_logged_in || return 1
+
+  if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+    echo "Set CLOUDFLARE_API_TOKEN (see infra/opentofu/state-bootstrap/README.md)." >&2
+    return 1
+  fi
+
+  preflight_cloudflare_account_id_readonly "${project}" "${infra_config}" || return 1
+
+  local account_id
+  account_id="$(preflight_cloudflare_account_id_resolved "${project}" "${infra_config}")"
+  preflight_cloudflare_api_token "${CLOUDFLARE_API_TOKEN}" "${account_id}" || return 1
+
+  preflight_github_tofu_release_env "${project}" "${infra_config}" || return 1
+}
+
 preflight_cloudflare_account_id() {
   local account_id=$1
   if [[ -z "${account_id}" ]]; then
     echo "Set CLOUDFLARE_ACCOUNT_ID or store CLOUDFLARE_ACCOUNT_ID in Doppler." >&2
     return 1
   fi
-}
-
-# preflight_cloudflare_token_has_permission_names checks token policy grants (not the account catalog).
-preflight_cloudflare_token_has_permission_names() {
-  local token_json=$1
-  local catalog_json=$2
-  shift 2
-  local required name missing=0 id
-  for required in "$@"; do
-    if echo "${token_json}" | jq -e --arg n "${required}" '
-      [.result.policies[]?.permission_groups[]? | .name] | index($n) != null
-    ' >/dev/null; then
-      continue
-    fi
-    id="$(echo "${catalog_json}" | jq -r --arg n "${required}" '
-      .result[]? | select(.name == $n) | .id // empty
-    ' | head -1)"
-    if [[ -n "${id}" ]] && echo "${token_json}" | jq -e --arg id "${id}" '
-      [.result.policies[]?.permission_groups[]? | .id] | index($id) != null
-    ' >/dev/null; then
-      continue
-    fi
-    echo "Cloudflare token is missing required permission: ${required}" >&2
-    missing=1
-  done
-  return "${missing}"
 }
 
 preflight_cloudflare_fetch_token_details() {
@@ -114,43 +142,65 @@ preflight_cloudflare_fetch_token_details() {
     echo "${details}"
     return 0
   fi
-  echo "Cloudflare token details failed for user and account token endpoints (need API Tokens Read/Write)." >&2
+  echo "Cloudflare token details failed for user and account token endpoints (need User API Tokens Read or Account API Tokens Read)." >&2
   return 1
 }
 
-preflight_cloudflare_api_token() {
+preflight_cloudflare_verify_token_id() {
   local token=$1
   local account_id=$2
-  local verify token_id details catalog
+  local verify token_id
+
   verify="$(curl -fsS -H "Authorization: Bearer ${token}" \
-    "https://api.cloudflare.com/client/v4/user/tokens/verify")" || {
-    echo "Cloudflare token verify request failed." >&2
-    return 1
-  }
-  if [[ "$(echo "${verify}" | jq -r '.success')" != "true" ]]; then
-    echo "Cloudflare token verify failed: $(echo "${verify}" | jq -r '.errors[0].message // .')" >&2
+    "https://api.cloudflare.com/client/v4/user/tokens/verify" 2>/dev/null || true)"
+  if [[ "$(echo "${verify}" | jq -r '.success // false')" == "true" ]]; then
+    token_id="$(echo "${verify}" | jq -r '.result.id // empty')"
+    if [[ -n "${token_id}" ]]; then
+      printf '%s' "${token_id}"
+      return 0
+    fi
+  fi
+
+  verify="$(curl -fsS -H "Authorization: Bearer ${token}" \
+    "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/verify" 2>/dev/null || true)"
+  if [[ "$(echo "${verify}" | jq -r '.success // false')" != "true" ]]; then
+    echo "Cloudflare token verify failed for user and account verify endpoints." >&2
     return 1
   fi
 
   token_id="$(echo "${verify}" | jq -r '.result.id // empty')"
   if [[ -z "${token_id}" ]]; then
-    echo "Cloudflare token verify did not return a token id." >&2
+    echo "Cloudflare account token verify did not return a token id." >&2
+    return 1
+  fi
+  printf '%s' "${token_id}"
+}
+
+preflight_cloudflare_api_token() {
+  local token=$1
+  local account_id=$2
+  local token_id details catalog
+  local r2_write_id api_tokens_write_id
+
+  token_id="$(preflight_cloudflare_verify_token_id "${token}" "${account_id}")" || return 1
+
+  preflight_cloudflare_capability_r2_list_buckets "${token}" "${account_id}" || return 1
+  preflight_cloudflare_capability_list_account_tokens "${token}" "${account_id}" || return 1
+
+  catalog="$(preflight_cloudflare_fetch_permission_groups_catalog "${token}" "${account_id}")" || return 1
+  r2_write_id="$(preflight_cloudflare_catalog_permission_id "${catalog}" \
+    "${PREFLIGHT_CF_PERM_R2_STORAGE_WRITE_NAME}")"
+  api_tokens_write_id="$(preflight_cloudflare_catalog_permission_id "${catalog}" \
+    "${PREFLIGHT_CF_PERM_ACCOUNT_API_TOKENS_WRITE_NAME}")"
+  if [[ -z "${r2_write_id}" || -z "${api_tokens_write_id}" ]]; then
+    echo "Cloudflare permission catalog missing ${PREFLIGHT_CF_PERM_R2_STORAGE_WRITE_NAME} or ${PREFLIGHT_CF_PERM_ACCOUNT_API_TOKENS_WRITE_NAME}." >&2
     return 1
   fi
 
-  details="$(preflight_cloudflare_fetch_token_details "${token}" "${account_id}" "${token_id}")" || return 1
-
-  catalog="$(curl -fsS -H "Authorization: Bearer ${token}" \
-    "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/permission_groups")" || {
-    echo "Cloudflare permission groups request failed (need permission to read token groups)." >&2
-    return 1
-  }
-  if [[ "$(echo "${catalog}" | jq -r '.success')" != "true" ]]; then
-    echo "Cloudflare permission groups failed: $(echo "${catalog}" | jq -r '.errors[0].message // .')" >&2
-    return 1
+  if details="$(preflight_cloudflare_fetch_token_details "${token}" "${account_id}" "${token_id}")"; then
+    preflight_cloudflare_token_has_allow_permission_ids "${details}" \
+      "${r2_write_id}" "${api_tokens_write_id}" || return 1
+  else
+    echo "Note: skipping token policy ID probe (grant User API Tokens Read or Account API Tokens Read to enable)." >&2
   fi
-
-  preflight_cloudflare_token_has_permission_names "${details}" "${catalog}" \
-    "Workers R2 Storage Write" \
-    "Account API Tokens Write"
 }

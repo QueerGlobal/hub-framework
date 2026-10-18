@@ -6,14 +6,15 @@ Requires **OpenTofu 1.10.0+** (state/plan encryption with `enforced = true` and 
 
 ## Cloudflare bootstrap token permissions
 
-Export `CLOUDFLARE_API_TOKEN` before running `scripts/bootstrap-release-infra.sh`. Preflight uses:
+Export `CLOUDFLARE_API_TOKEN` before running `scripts/bootstrap-release-infra.sh`. Preflight uses capability probes with the token itself, then optional policy checks by permission group **id** (allow policies only; deny is ignored):
 
-1. `GET /user/tokens/verify` (token id)
-2. `GET /user/tokens/{id}` for user-owned tokens, or `GET /accounts/{account_id}/tokens/{id}` when the user token endpoint fails (account-owned tokens)
-3. `GET /accounts/{account_id}/tokens/permission_groups` (catalog)
-4. Grant check on **that token's** policies for **Workers R2 Storage Write** and **Account API Tokens Write**
+1. `GET /user/tokens/verify`, or `GET /accounts/{account_id}/tokens/verify` when user verify fails (account-owned tokens)
+2. `GET /accounts/{account_id}/r2/buckets?per_page=1` (R2 account access)
+3. `GET /accounts/{account_id}/tokens?per_page=1` (Account API Tokens Read/Write namespace)
+4. `GET /accounts/{account_id}/tokens/permission_groups` (catalog; resolves **Write** group names such as **Workers R2 Storage Write** and **Account API Tokens Write**, not dashboard "Edit" labels)
+5. When token details are readable (`GET /user/tokens/{id}` or `GET /accounts/{account_id}/tokens/{id}`), confirm allow policies include the catalog ids for R2 Storage Write and Account API Tokens Write. This step needs **User API Tokens Read** or **Account API Tokens Read** on the bootstrap token.
 
-Dashboard templates: **API Tokens Read/Write** (Create additional tokens) plus R2 edit at account scope.
+Dashboard templates: **Account API Tokens Write** plus **Workers R2 Storage Write** at account scope.
 
 ## Doppler configs
 

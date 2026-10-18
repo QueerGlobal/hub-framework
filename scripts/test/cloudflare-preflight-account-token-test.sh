@@ -1,46 +1,19 @@
 #!/usr/bin/env bash
-# Account-owned tokens use GET /accounts/{account_id}/tokens/{id} when user token GET fails.
+# Account-owned tokens: user verify fails, account verify succeeds, account token details by ID.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TESTDIR="$(mktemp -d)"
-trap 'rm -rf "${TESTDIR}"' EXIT
+# shellcheck source=scripts/test/lib/cloudflare-preflight-mock.sh
+source "${ROOT}/scripts/test/lib/cloudflare-preflight-mock.sh"
 
-FAKE_BIN="${TESTDIR}/bin"
-mkdir -p "${FAKE_BIN}"
-
-cat > "${FAKE_BIN}/curl" <<'EOF'
-#!/usr/bin/env bash
-url="${@: -1}"
-if [[ "${url}" == *"/user/tokens/verify" ]]; then
-  printf '%s\n' '{"success":true,"result":{"id":"account-owned-token-id","status":"active"}}'
-  exit 0
-fi
-if [[ "${url}" == *"/tokens/permission_groups" ]]; then
-  printf '%s\n' '{"success":true,"result":[{"id":"1","name":"Workers R2 Storage Write"},{"id":"2","name":"Account API Tokens Write"}]}'
-  exit 0
-fi
-if [[ "${url}" == *"/user/tokens/account-owned-token-id" ]]; then
-  echo "user token details forbidden" >&2
-  exit 403
-fi
-if [[ "${url}" == *"/accounts/00000000000000000000000000000001/tokens/account-owned-token-id" ]]; then
-  printf '%s\n' '{"success":true,"result":{"id":"account-owned-token-id","policies":[{"effect":"allow","permission_groups":[{"id":"1","name":"Workers R2 Storage Write"},{"id":"2","name":"Account API Tokens Write"}]}]}}'
-  exit 0
-fi
-echo "unexpected curl url: ${url}" >&2
-exit 1
-EOF
-chmod +x "${FAKE_BIN}/curl"
-
-export PATH="${FAKE_BIN}:${PATH}"
-
-# shellcheck source=scripts/lib/preflight.sh
-source "${ROOT}/scripts/lib/preflight.sh"
-
-if ! preflight_cloudflare_api_token "account-owned-mock-token" "00000000000000000000000000000001"; then
-  echo "FAIL: account-owned mock token should pass preflight via account token endpoint" >&2
+if ! cloudflare_preflight_run_preflight "${ROOT}" \
+  CF_MOCK_USER_VERIFY_OK=0 \
+  CF_MOCK_ACCOUNT_VERIFY_OK=1 \
+  CF_MOCK_USER_DETAILS_OK=0 \
+  CF_MOCK_ACCOUNT_DETAILS_OK=1 \
+  CF_MOCK_DETAILS_FIXTURE=token-details-account-owned-allow.json; then
+  echo "FAIL: account-owned mock token should pass preflight" >&2
   exit 1
 fi
 
-echo "OK: account-owned mock token accepted via GET /accounts/{account_id}/tokens/{id}"
+echo "OK: account-owned token passes user-then-account verify and capability checks"

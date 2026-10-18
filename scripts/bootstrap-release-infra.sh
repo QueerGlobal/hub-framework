@@ -16,6 +16,10 @@ source "${ROOT}/scripts/lib/preflight.sh"
 source "${ROOT}/scripts/lib/plan-files.sh"
 # shellcheck source=scripts/lib/bootstrap-backend-mode.sh
 source "${ROOT}/scripts/lib/bootstrap-backend-mode.sh"
+# shellcheck source=scripts/lib/doppler-ci-token.sh
+source "${ROOT}/scripts/lib/doppler-ci-token.sh"
+# shellcheck source=scripts/lib/bootstrap-doppler-sync.sh
+source "${ROOT}/scripts/lib/bootstrap-doppler-sync.sh"
 
 install_plan_file_trap
 
@@ -37,6 +41,9 @@ register_plan_file "${RELEASE_PLAN}"
 
 confirm() {
   local prompt=$1
+  if [[ "${BOOTSTRAP_AUTO_CONFIRM:-}" == "1" ]]; then
+    return 0
+  fi
   read -r -p "${prompt} [y/N] " reply
   case "${reply}" in
     y|Y|yes|YES) return 0 ;;
@@ -50,27 +57,24 @@ require_cmd() {
 
 require_cmd tofu doppler curl jq openssl
 
-preflight_doppler_logged_in
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
 
-if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
-  echo "Set CLOUDFLARE_API_TOKEN (see infra/opentofu/state-bootstrap/README.md for required permissions)." >&2
-  exit 1
-fi
+preflight_bootstrap_inputs_readonly "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}" || exit 1
+export BOOTSTRAP_PREFLIGHT_COMPLETE=1
 
-export CLOUDFLARE_API_TOKEN
-
-ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID:-}"
-if [[ -z "${ACCOUNT_ID}" ]] && preflight_doppler_project_exists "${DOPPLER_PROJECT_NAME}"; then
-  ACCOUNT_ID="$(doppler secrets get CLOUDFLARE_ACCOUNT_ID --plain -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" 2>/dev/null || true)"
-fi
+ACCOUNT_ID="$(preflight_cloudflare_account_id_resolved "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}")"
 preflight_cloudflare_account_id "${ACCOUNT_ID}"
 
-preflight_cloudflare_api_token "${CLOUDFLARE_API_TOKEN}" "${ACCOUNT_ID}"
-
-preflight_github_tofu_release_env "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}"
-
 preflight_ensure_doppler_project_and_config "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}"
-preflight_doppler_secret_exists GITHUB_TOFU_RELEASE_ENV "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}"
+bootstrap_sync_env_secrets_to_doppler "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}" confirm || exit 1
+
+if ! doppler_ci_infra_service_token_exists "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}" \
+  "${DOPPLER_CI_INFRA_SERVICE_TOKEN_NAME}"; then
+  confirm "Create read-only Doppler service token ${DOPPLER_CI_INFRA_SERVICE_TOKEN_NAME} for CI (${DOPPLER_INFRA_CONFIG} only)?"
+  CI_DOPPLER_TOKEN="$(ensure_doppler_ci_infra_service_token "${DOPPLER_PROJECT_NAME}" "${DOPPLER_INFRA_CONFIG}")"
+  confirm "Store ${DOPPLER_CI_INFRA_SERVICE_TOKEN_NAME} token in Doppler (${DOPPLER_INFRA_CONFIG}) for GitHub Actions secret sync?"
+  doppler_secret_set_stdin DOPPLER_CI_INFRA_SERVICE_TOKEN "${CI_DOPPLER_TOKEN}"
+fi
 
 ensure_doppler_bootstrap_admin_config() {
   if ! doppler configs get "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}" --project "${DOPPLER_PROJECT_NAME}" >/dev/null 2>&1; then
@@ -113,9 +117,44 @@ confirm "Run tofu init/plan/apply for state-bootstrap (creates R2 bucket and rel
 cd "${BOOTSTRAP_DIR}"
 tofu init -input=false
 
-tofu plan -input=false -out="${BOOTSTRAP_PLAN}"
-confirm "Apply bootstrap plan?"
-tofu apply -input=false "${BOOTSTRAP_PLAN}"
+if [[ "${BOOTSTRAP_E2E:-}" == "1" ]]; then
+  tofu test
+else
+  tofu plan -input=false -out="${BOOTSTRAP_PLAN}"
+  confirm "Apply bootstrap plan?"
+  tofu apply -input=false "${BOOTSTRAP_PLAN}"
+fi
+
+if [[ "${BOOTSTRAP_E2E:-}" == "1" ]]; then
+  echo "==> Release environment stack (E2E init path only)"
+  cd "${RELEASE_DIR}"
+  export TF_VAR_state_encryption_passphrase="${TF_VAR_bootstrap_state_encryption_passphrase}"
+  export TF_VAR_state_encryption_passphrase_legacy="${TF_VAR_bootstrap_state_encryption_passphrase_legacy}"
+  export GITHUB_TOKEN="${GITHUB_TOFU_RELEASE_ENV:-e2e-mock-github-token}"
+  cat > "${RELEASE_DIR}/backend-config.hcl" <<EOF
+bucket                      = "e2e-mock-bucket"
+key                         = "${RELEASE_STATE_KEY}"
+region                      = "auto"
+endpoint                    = "https://example.r2.cloudflarestorage.com"
+encrypt                     = true
+use_lockfile                = true
+skip_credentials_validation = true
+skip_region_validation      = true
+skip_requesting_account_id  = true
+EOF
+  export TF_VAR_state_encryption_passphrase
+  export TF_VAR_state_encryption_passphrase_legacy
+  doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c "
+    export GITHUB_TOKEN=\"${GITHUB_TOKEN}\"
+    export TF_VAR_state_encryption_passphrase=\"${TF_VAR_state_encryption_passphrase}\"
+    export TF_VAR_state_encryption_passphrase_legacy=\"${TF_VAR_state_encryption_passphrase_legacy}\"
+    tofu init -input=false -backend-config=backend-config.hcl -reconfigure || \
+      tofu init -input=false -backend=false -reconfigure
+    tofu validate
+  "
+  echo "Done (E2E). Preflight, Doppler split, bootstrap tofu test, and release init path succeeded."
+  exit 0
+fi
 
 ensure_doppler_bootstrap_admin_config
 confirm "Back up encrypted local bootstrap state to Doppler (${DOPPLER_BOOTSTRAP_ADMIN_CONFIG})?"
@@ -175,12 +214,18 @@ doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c
   export TF_VAR_state_encryption_passphrase=\"${TF_VAR_state_encryption_passphrase}\"
   export TF_VAR_state_encryption_passphrase_legacy=\"${TF_VAR_state_encryption_passphrase_legacy}\"
   tofu init -input=false -backend-config=backend-config.hcl -reconfigure
-  tofu plan -input=false -out=\"${RELEASE_PLAN}\"
+  if [[ \"${BOOTSTRAP_E2E:-}\" == \"1\" ]]; then
+    tofu validate
+  else
+    tofu plan -input=false -out=\"${RELEASE_PLAN}\"
+  fi
 "
-confirm "Apply release-environment plan?"
-doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c "
-  export GITHUB_TOKEN=\"${GITHUB_TOKEN}\"
-  tofu apply -input=false \"${RELEASE_PLAN}\"
-"
+if [[ "${BOOTSTRAP_E2E:-}" != "1" ]]; then
+  confirm "Apply release-environment plan?"
+  doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c "
+    export GITHUB_TOKEN=\"${GITHUB_TOKEN}\"
+    tofu apply -input=false \"${RELEASE_PLAN}\"
+  "
+fi
 
 echo "Done. Release environment is ready; bootstrap state remains local with backup in ${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}."
