@@ -2,7 +2,7 @@
 
 Creates the shared **R2** bucket and a **bucket-scoped** S3-compatible API token used only by the **release-environment** stack. **Bootstrap stack state stays on disk** (local backend) and is backed up to Doppler config **`bootstrap-admin`**, which CI must never read.
 
-Requires **OpenTofu 1.10.0+** (state/plan encryption with `enforced = true` and passphrase rotation via `bootstrap_primary` / fallback `bootstrap`).
+Requires **OpenTofu 1.10.0+** for day-to-day use (**1.13.1+** for passphrase rotation). State and plan encryption use key provider **`bootstrap`** with `enforced = true`.
 
 ## Cloudflare bootstrap token permissions
 
@@ -41,7 +41,19 @@ Release R2 credentials in `infra` cannot overwrite bootstrap state because boots
 
 ## Passphrase rotation
 
-Encryption uses primary key provider **`bootstrap_primary`** and fallback **`bootstrap`** (original name) with `enforced = true` on state and plan. To rotate, set a new `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE` in `bootstrap-admin`, keep the previous value in `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_LEGACY`, then run `tofu apply -refresh-only` in this stack. See `scripts/test/encryption-rotation-test.sh`.
+Committed config keeps a **single** key provider **`bootstrap`** (no fallback). Rotation is two refresh-only applies via `TF_ENCRYPTION` so tracked `.tf` files stay unchanged; state metadata remains under **`bootstrap`**.
+
+1. Store the next passphrase in Doppler (for example `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT`) and export the current value from `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE`.
+2. From the repo root:
+
+```bash
+./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/state-bootstrap bootstrap \
+  "${TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE}" "${TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT}"
+```
+
+3. Update `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE` in `bootstrap-admin` to the new value and remove `_NEXT`.
+
+Requires **OpenTofu 1.13.1+**. Proof: `scripts/test/encryption-rotation-test.sh`.
 
 ## Run
 

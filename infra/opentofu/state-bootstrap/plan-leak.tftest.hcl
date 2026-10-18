@@ -28,8 +28,7 @@ run "plan_leak" {
 
   variables {
     cloudflare_account_id                        = "00000000000000000000000000000001"
-    bootstrap_state_encryption_passphrase        = "plan-leak-bootstrap-passphrase-xyzzy"
-    bootstrap_state_encryption_passphrase_legacy = "plan-leak-bootstrap-passphrase-xyzzy"
+    bootstrap_state_encryption_passphrase = "plan-leak-bootstrap-passphrase-xyzzy"
     state_bucket_name                            = "queerglobal-hub-framework-tofu-state"
   }
 }

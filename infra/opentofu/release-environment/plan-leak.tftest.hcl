@@ -20,8 +20,7 @@ run "plan_leak" {
   }
 
   variables {
-    state_encryption_passphrase        = "plan-leak-release-passphrase-xyzzy"
-    state_encryption_passphrase_legacy = "plan-leak-release-passphrase-xyzzy"
+    state_encryption_passphrase = "plan-leak-release-passphrase-xyzzy"
     github_owner                       = "QueerGlobal"
     github_repository                  = "hub-framework"
     environment_name                   = "release"

@@ -181,14 +181,12 @@ RELEASE_TFVARS="${RELEASE_DIR}/plan-leak.ci.tfvars"
 
 BOOTSTRAP_ENV=(
   "TF_VAR_bootstrap_state_encryption_passphrase=plan-leak-bootstrap-passphrase-16chars"
-  "TF_VAR_bootstrap_state_encryption_passphrase_legacy=plan-leak-bootstrap-passphrase-16chars"
   "TF_VAR_cloudflare_account_id=00000000000000000000000000000001"
   "TF_VAR_state_bucket_name=queerglobal-hub-framework-tofu-state"
   "CLOUDFLARE_API_TOKEN=plan-leak-mock-token"
 )
 RELEASE_ENV=(
   "TF_VAR_state_encryption_passphrase=plan-leak-release-passphrase-16chars"
-  "TF_VAR_state_encryption_passphrase_legacy=plan-leak-release-passphrase-16chars"
   "GITHUB_TOKEN=plan-leak-mock-token"
 )
 
