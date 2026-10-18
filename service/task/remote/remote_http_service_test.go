@@ -300,8 +300,8 @@ func TestForwardingService_NetworkTimeoutRedactsURLInErrorLogsAndSentry(t *testi
 	assertNoForwardURLSecrets(t, err.Error(), logBuf.String())
 
 	events := transport.Events()
-	require.NotEmpty(t, events)
-	assertSentryEventRedacted(t, events[len(events)-1])
+	require.Len(t, events, 1, "network give-up should report exactly one Sentry event")
+	assertSentryEventRedacted(t, events[0])
 }
 
 func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *testing.T) {
@@ -339,8 +339,88 @@ func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *te
 	assertNoForwardURLSecrets(t, err.Error(), logBuf.String())
 
 	events := transport.Events()
-	require.NotEmpty(t, events)
+	require.Len(t, events, 1, "connection refused give-up should report exactly one Sentry event")
 	assertSentryEventRedacted(t, events[0])
+}
+
+func TestForwardingService_RetrySuccessReportsNoSentryEvents(t *testing.T) {
+	transport := &recordingSentryTransport{}
+	var calls atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) < 2 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	task, err := NewForwardingService(map[string]interface{}{
+		"host":            ts.URL,
+		"pathprefix":      "api",
+		"clientTimeout":   float64(1),
+		"sentryTransport": transport,
+		"sentry": map[string]interface{}{
+			"dsn": "https://public@sentry.io/1",
+		},
+		"backoff": map[string]interface{}{
+			"initialDelay": float64(0.005),
+			"maxDelay":     float64(0.01),
+			"multiplier":   float64(1.0),
+			"maxRetries":   float64(3),
+		},
+	})
+	require.NoError(t, err)
+	if shutdown, ok := task.(interface{ Shutdown() }); ok {
+		t.Cleanup(shutdown.Shutdown)
+	}
+
+	req := testRequest("/v1/resource")
+	require.NoError(t, task.Apply(context.Background(), req))
+	assert.Equal(t, int32(2), calls.Load())
+	assert.Empty(t, transport.Events(), "retries that eventually succeed must not emit Sentry events")
+}
+
+func TestForwardingService_ClientTimeoutReportsExactlyOneSentryEvent(t *testing.T) {
+	transport := &recordingSentryTransport{}
+	var calls atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(ts.Close)
+
+	var logBuf bytes.Buffer
+	log := zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	task, err := NewForwardingService(map[string]interface{}{
+		"host":            ts.URL,
+		"pathprefix":      "api",
+		"clientTimeout":   float64(0.05),
+		"logger":          &log,
+		"sentryTransport": transport,
+		"sentry": map[string]interface{}{
+			"dsn": "https://public@sentry.io/1",
+		},
+		"backoff": map[string]interface{}{
+			"initialDelay": float64(0.005),
+			"maxDelay":     float64(0.01),
+			"multiplier":   float64(1.0),
+			"maxRetries":   float64(2),
+		},
+	})
+	require.NoError(t, err)
+	if shutdown, ok := task.(interface{ Shutdown() }); ok {
+		t.Cleanup(shutdown.Shutdown)
+	}
+
+	err = task.Apply(context.Background(), testRequest("/v1/resource"))
+	require.Error(t, err)
+	assert.Equal(t, int32(2), calls.Load())
+	require.Len(t, transport.Events(), 1, "timeout give-up after retries should report exactly one Sentry event")
+	assertSentryEventRedacted(t, transport.Events()[0])
 }
 
 func TestForwardingService_ClientTimeout(t *testing.T) {
