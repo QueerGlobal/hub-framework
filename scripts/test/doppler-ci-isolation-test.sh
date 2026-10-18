@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI must not read bootstrap-admin Doppler config or bootstrap state backup secrets.
+# CI must not read bootstrap-admin; infra-scoped service token is denied there.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -15,4 +15,11 @@ if grep -qE 'AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY' "${INFRA_YML}"; then
   exit 1
 fi
 
-echo "OK: CI workflow does not reference bootstrap-admin or R2 credentials"
+if ! grep -q 'doppler-ci-runtime-guard.sh' "${INFRA_YML}"; then
+  echo "FAIL: infra workflow must run doppler-ci-runtime-guard when DOPPLER_TOKEN is set" >&2
+  exit 1
+fi
+
+"${ROOT}/scripts/test/doppler-ci-scope-test.sh"
+
+echo "OK: CI workflow and infra-scoped Doppler token cannot read bootstrap-admin"

@@ -28,6 +28,11 @@ jobs:
       # actions/checkout v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
+      - name: Fail closed if DOPPLER_TOKEN reads bootstrap-admin
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: scripts/test/doppler-ci-runtime-guard.sh
+
       - name: Install OpenTofu
         run: |
           TOFU_ZIP="tofu_${TOFU_VERSION}_linux_amd64.zip"
@@ -83,11 +88,17 @@ jobs:
       - name: Cloudflare account token preflight test
         run: scripts/test/cloudflare-preflight-account-token-test.sh
 
+      - name: Cloudflare preflight mutation tests
+        run: scripts/test/cloudflare-preflight-mutations-test.sh
+
       - name: Encryption rotation test
         run: scripts/test/encryption-rotation-test.sh
 
       - name: Doppler CI isolation test
         run: scripts/test/doppler-ci-isolation-test.sh
+
+      - name: Bootstrap E2E clean checkout test
+        run: scripts/test/bootstrap-e2e-clean-checkout-test.sh
 
       - name: Shellcheck
         run: |
@@ -98,12 +109,19 @@ jobs:
             scripts/lib/plan-files.sh \
             scripts/lib/bootstrap-backend-mode.sh \
             scripts/lib/doppler-configs.sh \
+            scripts/lib/doppler-ci-token.sh \
+            scripts/lib/cloudflare-preflight-permissions.sh \
+            scripts/lib/bootstrap-doppler-sync.sh \
             scripts/test/doppler-secrets-test.sh \
             scripts/test/doppler-ci-isolation-test.sh \
+            scripts/test/doppler-ci-scope-test.sh \
+            scripts/test/doppler-ci-runtime-guard.sh \
             scripts/test/encryption-rotation-test.sh \
             scripts/test/plan-encryption-test.sh \
             scripts/test/cloudflare-preflight-test.sh \
             scripts/test/cloudflare-preflight-account-token-test.sh \
+            scripts/test/cloudflare-preflight-mutations-test.sh \
+            scripts/test/bootstrap-e2e-clean-checkout-test.sh \
             scripts/test/bootstrap-backend-restore-test.sh
 
       - name: Doppler secrets helper test
