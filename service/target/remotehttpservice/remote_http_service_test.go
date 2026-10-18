@@ -1,20 +1,72 @@
 package remotehttpservice
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/service/remoteforward"
 	"github.com/QueerGlobal/hub-framework/util"
+	"github.com/getsentry/sentry-go"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type recordingSentryTransport struct {
+	mu     sync.Mutex
+	events []*sentry.Event
+}
+
+func (t *recordingSentryTransport) Flush(time.Duration) bool { return true }
+
+func (t *recordingSentryTransport) Configure(sentry.ClientOptions) {}
+
+func (t *recordingSentryTransport) SendEvent(event *sentry.Event) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.events = append(t.events, event)
+}
+
+func (t *recordingSentryTransport) Events() []*sentry.Event {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]*sentry.Event, len(t.events))
+	copy(out, t.events)
+	return out
+}
+
+func assertNoForwardURLSecrets(t *testing.T, parts ...string) {
+	t.Helper()
+	for _, part := range parts {
+		assert.NotContains(t, part, "SECRET123")
+		assert.NotContains(t, part, "secret-path")
+		assert.NotContains(t, part, "forwarduser")
+	}
+}
+
+func assertTimeoutDetectable(t *testing.T, err error) {
+	t.Helper()
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+	assert.Contains(t, strings.ToLower(err.Error()), "timeout")
+}
 
 func testBackoff(maxRetries int) util.BackoffConfig {
 	return util.BackoffConfig{
@@ -191,6 +243,85 @@ func TestForwardingService_ResponseBodyOverLimit(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "exceeds limit")
 	assert.Contains(t, err.Error(), util.UnrecoverableErrorMsg)
+}
+
+func TestForwardingService_NetworkTimeoutRedactsURLInErrorLogsAndSentry(t *testing.T) {
+	transport := &recordingSentryTransport{}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(ts.Close)
+
+	parsed, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+	hostWithCreds := fmt.Sprintf("http://forwarduser:forwardpass@%s", parsed.Host)
+
+	var logBuf bytes.Buffer
+	log := zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	svc := NewForwardingService(ForwardingServiceConfig{
+		Host:          hostWithCreds,
+		PathPrefix:    "api",
+		BackoffConfig: testBackoff(2),
+		ClientTimeout: 50 * time.Millisecond,
+		Logger:        &log,
+		Sentry: remoteforward.SentryConfig{
+			DSN:       "https://public@sentry.io/1",
+			Transport: transport,
+		},
+	})
+	t.Cleanup(svc.Shutdown)
+
+	req := testRequest("/secret-path")
+	req.URL.RawQuery = "token=SECRET123"
+
+	_, err = svc.Apply(req)
+	require.Error(t, err)
+
+	assertNoForwardURLSecrets(t, err.Error(), logBuf.String())
+	assertTimeoutDetectable(t, err)
+
+	events := transport.Events()
+	require.NotEmpty(t, events)
+	require.NotEmpty(t, events[len(events)-1].Exception)
+	sentryText := events[len(events)-1].Exception[0].Value
+	assertNoForwardURLSecrets(t, sentryText)
+	assert.Equal(t, "http_request", events[len(events)-1].Tags["stage"])
+}
+
+func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *testing.T) {
+	transport := &recordingSentryTransport{}
+	hostWithCreds := "http://forwarduser:forwardpass@127.0.0.1:1"
+
+	var logBuf bytes.Buffer
+	log := zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	svc := NewForwardingService(ForwardingServiceConfig{
+		Host:          hostWithCreds,
+		PathPrefix:    "api",
+		BackoffConfig: testBackoff(1),
+		ClientTimeout: time.Second,
+		Logger:        &log,
+		Sentry: remoteforward.SentryConfig{
+			DSN:       "https://public@sentry.io/1",
+			Transport: transport,
+		},
+	})
+	t.Cleanup(svc.Shutdown)
+
+	req := testRequest("/secret-path")
+	req.URL.RawQuery = "token=SECRET123"
+
+	_, err := svc.Apply(req)
+	require.Error(t, err)
+
+	assertNoForwardURLSecrets(t, err.Error(), logBuf.String())
+
+	events := transport.Events()
+	require.NotEmpty(t, events)
+	require.NotEmpty(t, events[0].Exception)
+	assertNoForwardURLSecrets(t, events[0].Exception[0].Value)
 }
 
 func TestForwardingService_ClientTimeout(t *testing.T) {

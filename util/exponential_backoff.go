@@ -95,7 +95,7 @@ func TargetHostTag(rawURL string) string {
 
 func (b *Backoff) logRetry(attempt int, err error, sleepDelay time.Duration) {
 	event := b.logger().Warn().
-		Err(err).
+		Err(RedactURLError(err)).
 		Int("attempt", attempt).
 		Dur("retry_in", sleepDelay)
 	if host := TargetHostTag(b.config.TargetURL); host != "" {
@@ -105,7 +105,7 @@ func (b *Backoff) logRetry(attempt int, err error, sleepDelay time.Duration) {
 }
 
 func (b *Backoff) logUnrecoverable(err error) {
-	event := b.logger().Error().Err(err)
+	event := b.logger().Error().Err(RedactURLError(err))
 	if host := TargetHostTag(b.config.TargetURL); host != "" {
 		event = event.Str("target_host", host)
 	}
@@ -142,5 +142,5 @@ func (b *Backoff) ExecuteWithBackoff(operation func() error) error {
 		baseDelay = capDelay(baseDelay, b.config.MaxDelay)
 	}
 
-	return errors.Wrap(err, "all retry attempts failed")
+	return errors.Wrap(RedactURLError(err), "all retry attempts failed")
 }

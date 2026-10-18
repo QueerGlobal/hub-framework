@@ -108,7 +108,9 @@ func (fs *ForwardingService) Apply(request entity.ServiceRequest) (entity.Servic
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		redacted := util.RedactURLError(err)
+		fs.forward.ReportHTTPFailure(redacted)
+		return nil, redacted
 	}
 
 	return serviceResponse, nil
@@ -134,7 +136,7 @@ func (fs *ForwardingService) forwardRequest(request entity.ServiceRequest) (*htt
 
 	resp, err := fs.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to perform HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to perform HTTP request: %w", util.RedactURLError(err))
 	}
 
 	return resp, nil

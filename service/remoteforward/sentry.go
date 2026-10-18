@@ -24,6 +24,8 @@ type SentryConfig struct {
 	Environment string
 	Release     string
 	SampleRate  float64
+	// Transport overrides the Sentry client transport (for example in tests).
+	Transport sentry.Transport
 }
 
 // NewSentryReporter builds a Sentry-backed reporter when DSN is set; otherwise a no-op.
@@ -50,6 +52,8 @@ func newSentryReporter(cfg SentryConfig, transport sentry.Transport) (ErrorRepor
 	}
 	if transport != nil {
 		opts.Transport = transport
+	} else if cfg.Transport != nil {
+		opts.Transport = cfg.Transport
 	}
 
 	client, err := sentry.NewClient(opts)

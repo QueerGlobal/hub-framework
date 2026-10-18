@@ -12,6 +12,7 @@ import (
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/service/remoteforward"
 	"github.com/QueerGlobal/hub-framework/util"
+	"github.com/getsentry/sentry-go"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -90,6 +91,9 @@ func NewForwardingService(config map[string]interface{}) (entity.Task, error) {
 			sentrySettings.SampleRate = sampleRate
 		}
 	}
+	if transport, ok := config["sentryTransport"].(sentry.Transport); ok {
+		sentrySettings.Transport = transport
+	}
 
 	var logger *zerolog.Logger
 	if logCfg, ok := config["logger"].(*zerolog.Logger); ok {
@@ -135,7 +139,9 @@ func (fs *ForwardingService) Apply(ctx context.Context, request entity.ServiceRe
 		return nil
 	})
 	if err != nil {
-		return err
+		redacted := util.RedactURLError(err)
+		fs.forward.ReportHTTPFailure(redacted)
+		return redacted
 	}
 
 	return nil
@@ -168,7 +174,7 @@ func (fs *ForwardingService) forwardRequest(ctx context.Context, request entity.
 
 	resp, err := fs.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to perform HTTP request: %w", err)
+		return nil, fmt.Errorf("failed to perform HTTP request: %w", util.RedactURLError(err))
 	}
 
 	return resp, nil

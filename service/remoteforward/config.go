@@ -96,6 +96,11 @@ func (c ForwardConfig) reportError(err error, stage string) {
 	c.reporter.ReportError(err, tags)
 }
 
+// ReportHTTPFailure sends a redacted forward HTTP failure to the configured error reporter.
+func (c ForwardConfig) ReportHTTPFailure(err error) {
+	c.reportError(err, "http_request")
+}
+
 func (c ForwardConfig) logLimitExceeded(limit int64) {
 	c.logger.Warn().Int64("limitBytes", limit).Str("target_host", c.targetHostTag).Msg("upstream response body exceeded configured limit")
 }

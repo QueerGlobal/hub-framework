@@ -1,19 +1,47 @@
 package remote
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/QueerGlobal/hub-framework/core/entity"
 	"github.com/QueerGlobal/hub-framework/util"
+	"github.com/getsentry/sentry-go"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type recordingSentryTransport struct {
+	mu     sync.Mutex
+	events []*sentry.Event
+}
+
+func (t *recordingSentryTransport) Flush(time.Duration) bool { return true }
+
+func (t *recordingSentryTransport) Configure(sentry.ClientOptions) {}
+
+func (t *recordingSentryTransport) SendEvent(event *sentry.Event) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.events = append(t.events, event)
+}
+
+func (t *recordingSentryTransport) Events() []*sentry.Event {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]*sentry.Event, len(t.events))
+	copy(out, t.events)
+	return out
+}
 
 func testBackoff(maxRetries int) util.BackoffConfig {
 	return util.BackoffConfig{
@@ -27,8 +55,8 @@ func testBackoff(maxRetries int) util.BackoffConfig {
 func newTask(t *testing.T, tsURL string, maxRetries int, clientTimeoutSec float64) entity.Task {
 	t.Helper()
 	task, err := NewForwardingService(map[string]interface{}{
-		"host":        tsURL,
-		"pathprefix":  "api",
+		"host":          tsURL,
+		"pathprefix":    "api",
 		"clientTimeout": clientTimeoutSec,
 		"backoff": map[string]interface{}{
 			"initialDelay": float64(0.005),
@@ -134,10 +162,10 @@ func TestForwardingService_ResponseBodyUnderLimit(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	task, err := NewForwardingService(map[string]interface{}{
-		"host":                   ts.URL,
-		"pathprefix":             "api",
-		"clientTimeout":          float64(1),
-		"maxResponseBodyBytes":   float64(limit),
+		"host":                 ts.URL,
+		"pathprefix":           "api",
+		"clientTimeout":        float64(1),
+		"maxResponseBodyBytes": float64(limit),
 		"backoff": map[string]interface{}{
 			"initialDelay": float64(0.005),
 			"maxDelay":     float64(0.01),
@@ -206,6 +234,106 @@ func TestNewForwardingService_InvalidSentryDSNStillWorks(t *testing.T) {
 	require.NoError(t, err)
 	req := testRequest("/v1/resource")
 	require.NoError(t, task.Apply(context.Background(), req))
+}
+
+func TestForwardingService_NetworkTimeoutRedactsURLInErrorLogsAndSentry(t *testing.T) {
+	transport := &recordingSentryTransport{}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(ts.Close)
+
+	parsed, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+	hostWithCreds := fmt.Sprintf("http://forwarduser:forwardpass@%s", parsed.Host)
+
+	var logBuf bytes.Buffer
+	log := zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	task, err := NewForwardingService(map[string]interface{}{
+		"host":            hostWithCreds,
+		"pathprefix":      "api",
+		"clientTimeout":   float64(0.05),
+		"logger":          &log,
+		"sentryTransport": transport,
+		"sentry": map[string]interface{}{
+			"dsn": "https://public@sentry.io/1",
+		},
+		"backoff": map[string]interface{}{
+			"initialDelay": float64(0.005),
+			"maxDelay":     float64(0.01),
+			"multiplier":   float64(1.0),
+			"maxRetries":   float64(2),
+		},
+	})
+	require.NoError(t, err)
+	if shutdown, ok := task.(interface{ Shutdown() }); ok {
+		t.Cleanup(shutdown.Shutdown)
+	}
+
+	req := testRequest("/secret-path")
+	req.URL.RawQuery = "token=SECRET123"
+
+	err = task.Apply(context.Background(), req)
+	require.Error(t, err)
+
+	for _, part := range []string{err.Error(), logBuf.String()} {
+		assert.NotContains(t, part, "SECRET123")
+		assert.NotContains(t, part, "secret-path")
+		assert.NotContains(t, part, "forwarduser")
+	}
+
+	events := transport.Events()
+	require.NotEmpty(t, events)
+	require.NotEmpty(t, events[len(events)-1].Exception)
+	exc := events[len(events)-1].Exception[0].Value
+	assert.NotContains(t, exc, "SECRET123")
+	assert.NotContains(t, exc, "secret-path")
+	assert.NotContains(t, exc, "forwarduser")
+}
+
+func TestForwardingService_ConnectionRefusedRedactsURLInErrorLogsAndSentry(t *testing.T) {
+	transport := &recordingSentryTransport{}
+	var logBuf bytes.Buffer
+	log := zerolog.New(&logBuf).With().Timestamp().Logger()
+
+	task, err := NewForwardingService(map[string]interface{}{
+		"host":            "http://forwarduser:forwardpass@127.0.0.1:1",
+		"pathprefix":      "api",
+		"clientTimeout":   float64(1),
+		"logger":          &log,
+		"sentryTransport": transport,
+		"sentry": map[string]interface{}{
+			"dsn": "https://public@sentry.io/1",
+		},
+		"backoff": map[string]interface{}{
+			"initialDelay": float64(0.005),
+			"maxDelay":     float64(0.01),
+			"multiplier":   float64(1.0),
+			"maxRetries":   float64(1),
+		},
+	})
+	require.NoError(t, err)
+	if shutdown, ok := task.(interface{ Shutdown() }); ok {
+		t.Cleanup(shutdown.Shutdown)
+	}
+
+	req := testRequest("/secret-path")
+	req.URL.RawQuery = "token=SECRET123"
+
+	err = task.Apply(context.Background(), req)
+	require.Error(t, err)
+
+	for _, part := range []string{err.Error(), logBuf.String()} {
+		assert.NotContains(t, part, "SECRET123")
+		assert.NotContains(t, part, "secret-path")
+		assert.NotContains(t, part, "forwarduser")
+	}
+
+	events := transport.Events()
+	require.NotEmpty(t, events)
+	assert.NotContains(t, events[0].Exception[0].Value, "SECRET123")
 }
 
 func TestForwardingService_ClientTimeout(t *testing.T) {
