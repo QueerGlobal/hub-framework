@@ -53,6 +53,7 @@ jobs:
       - name: OpenTofu validate and test (state-bootstrap)
         env:
           TF_VAR_bootstrap_state_encryption_passphrase: mock-bootstrap-passphrase-16
+          TF_VAR_bootstrap_state_encryption_passphrase_legacy: mock-bootstrap-passphrase-16
           TF_VAR_cloudflare_account_id: "00000000000000000000000000000001"
         working-directory: infra/opentofu/state-bootstrap
         run: |
@@ -63,6 +64,7 @@ jobs:
       - name: OpenTofu validate and test (release-environment)
         env:
           TF_VAR_state_encryption_passphrase: mock-release-passphrase-16
+          TF_VAR_state_encryption_passphrase_legacy: mock-release-passphrase-16
         working-directory: infra/opentofu/release-environment
         run: |
           tofu init -backend=false
@@ -78,6 +80,15 @@ jobs:
       - name: Bootstrap backend restore test
         run: scripts/test/bootstrap-backend-restore-test.sh
 
+      - name: Cloudflare account token preflight test
+        run: scripts/test/cloudflare-preflight-account-token-test.sh
+
+      - name: Encryption rotation test
+        run: scripts/test/encryption-rotation-test.sh
+
+      - name: Doppler CI isolation test
+        run: scripts/test/doppler-ci-isolation-test.sh
+
       - name: Shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
@@ -86,9 +97,13 @@ jobs:
             scripts/lib/preflight.sh \
             scripts/lib/plan-files.sh \
             scripts/lib/bootstrap-backend-mode.sh \
+            scripts/lib/doppler-configs.sh \
             scripts/test/doppler-secrets-test.sh \
+            scripts/test/doppler-ci-isolation-test.sh \
+            scripts/test/encryption-rotation-test.sh \
             scripts/test/plan-encryption-test.sh \
             scripts/test/cloudflare-preflight-test.sh \
+            scripts/test/cloudflare-preflight-account-token-test.sh \
             scripts/test/bootstrap-backend-restore-test.sh
 
       - name: Doppler secrets helper test

@@ -49,6 +49,20 @@ preflight_doppler_secret_exists() {
   fi
 }
 
+preflight_github_tofu_release_env() {
+  local project=$1
+  local config=$2
+  if [[ -n "${GITHUB_TOFU_RELEASE_ENV:-}" ]]; then
+    return 0
+  fi
+  if preflight_doppler_project_exists "${project}"; then
+    preflight_doppler_secret_exists GITHUB_TOFU_RELEASE_ENV "${project}" "${config}"
+    return $?
+  fi
+  echo "Set GITHUB_TOFU_RELEASE_ENV in the environment, or create Doppler project ${project} with secret GITHUB_TOFU_RELEASE_ENV before bootstrap." >&2
+  return 1
+}
+
 preflight_cloudflare_account_id() {
   local account_id=$1
   if [[ -z "${account_id}" ]]; then
@@ -83,10 +97,31 @@ preflight_cloudflare_token_has_permission_names() {
   return "${missing}"
 }
 
+preflight_cloudflare_fetch_token_details() {
+  local token=$1
+  local account_id=$2
+  local token_id=$3
+  local details=""
+  if details="$(curl -fsS -H "Authorization: Bearer ${token}" \
+    "https://api.cloudflare.com/client/v4/user/tokens/${token_id}" 2>/dev/null)" \
+    && [[ "$(echo "${details}" | jq -r '.success')" == "true" ]]; then
+    echo "${details}"
+    return 0
+  fi
+  if details="$(curl -fsS -H "Authorization: Bearer ${token}" \
+    "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/${token_id}" 2>/dev/null)" \
+    && [[ "$(echo "${details}" | jq -r '.success')" == "true" ]]; then
+    echo "${details}"
+    return 0
+  fi
+  echo "Cloudflare token details failed for user and account token endpoints (need API Tokens Read/Write)." >&2
+  return 1
+}
+
 preflight_cloudflare_api_token() {
   local token=$1
   local account_id=$2
-  local verify token_id details
+  local verify token_id details catalog
   verify="$(curl -fsS -H "Authorization: Bearer ${token}" \
     "https://api.cloudflare.com/client/v4/user/tokens/verify")" || {
     echo "Cloudflare token verify request failed." >&2
@@ -103,17 +138,8 @@ preflight_cloudflare_api_token() {
     return 1
   fi
 
-  details="$(curl -fsS -H "Authorization: Bearer ${token}" \
-    "https://api.cloudflare.com/client/v4/user/tokens/${token_id}")" || {
-    echo "Cloudflare token details request failed (need API Tokens Read/Write on this token)." >&2
-    return 1
-  }
-  if [[ "$(echo "${details}" | jq -r '.success')" != "true" ]]; then
-    echo "Cloudflare token details failed: $(echo "${details}" | jq -r '.errors[0].message // .')" >&2
-    return 1
-  fi
+  details="$(preflight_cloudflare_fetch_token_details "${token}" "${account_id}" "${token_id}")" || return 1
 
-  local catalog
   catalog="$(curl -fsS -H "Authorization: Bearer ${token}" \
     "https://api.cloudflare.com/client/v4/accounts/${account_id}/tokens/permission_groups")" || {
     echo "Cloudflare permission groups request failed (need permission to read token groups)." >&2

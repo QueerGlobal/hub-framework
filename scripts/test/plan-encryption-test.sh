@@ -1,103 +1,200 @@
 #!/usr/bin/env bash
-# Ensures OpenTofu plan files for real stacks do not contain encryption passphrases in plain text.
+# Proves plan encryption hides a sensitive marker in real stack plan files.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TRAP_PLAN_FILES=()
+TRAP_WORKDIRS=()
 
 cleanup() {
-  local f
+  local f d
   for f in "${TRAP_PLAN_FILES[@]:-}"; do
     rm -f "${f}"
+  done
+  for d in "${TRAP_WORKDIRS[@]:-}"; do
+    rm -rf "${d}"
   done
 }
 trap cleanup EXIT
 
 umask 077
 
-run_mocked_plan_test() {
-  local stack_name=$1
-  local stack_dir=$2
-  shift 2
-  local -a exports=("$@")
-
-  (
-    cd "${stack_dir}"
-    rm -rf .terraform terraform.tfstate terraform.tfstate.backup
-    local init_args=(-input=false)
-    if [[ "${stack_name}" == "release-environment" ]]; then
-      init_args+=(-backend=false)
-    fi
-    tofu init "${init_args[@]}" >/dev/null
-    for kv in "${exports[@]}"; do
-      export "${kv?}"
-    done
-    tofu test -filter=plan-leak >/dev/null
-  )
-  echo "OK: ${stack_name} mocked tofu test plan (plan-leak.tftest.hcl)"
+plan_file_contains_marker() {
+  local plan_file=$1
+  local marker=$2
+  if unzip -t "${plan_file}" >/dev/null 2>&1; then
+    unzip -p "${plan_file}" 2>/dev/null | grep -aF "${marker}" >/dev/null 2>&1
+    return $?
+  fi
+  grep -aF "${marker}" "${plan_file}" >/dev/null 2>&1
 }
 
-assert_plan_out_no_passphrase() {
+assert_versions_plan_block() {
+  local stack_name=$1
+  local versions_tf=$2
+  if ! grep -qE '[[:space:]]plan[[:space:]]*\{' "${versions_tf}"; then
+    echo "FAIL: ${stack_name} versions.tf is missing a plan { encryption } block" >&2
+    return 1
+  fi
+  echo "OK: ${stack_name} versions.tf defines plan encryption"
+}
+
+copy_stack_to_workdir() {
+  local stack_dir=$1
+  local workdir=$2
+  shopt -s nullglob
+  local f
+  for f in "${stack_dir}"/*.tf "${stack_dir}"/*.tfvars "${stack_dir}"/.terraform.lock.hcl; do
+    [[ -e "${f}" ]] || continue
+    cp "${f}" "${workdir}/"
+  done
+  shopt -u nullglob
+  rm -rf "${workdir}/.terraform" "${workdir}/terraform.tfstate" "${workdir}/terraform.tfstate.backup"
+}
+
+prepare_release_workdir_backend() {
+  local workdir=$1
+  sed -i 's/backend "s3" {}/backend "local" {\n    path = "terraform.tfstate"\n  }/' "${workdir}/versions.tf"
+}
+
+plan_leak_stack() {
   local stack_name=$1
   local stack_dir=$2
-  local pass=$3
+  local marker=$3
   local plan_file=$4
-  shift 4
-  local -a exports=("$@")
+  local tfvars_file=$5
+  shift 5
+  local -a extra_env=("$@")
+
+  assert_versions_plan_block "${stack_name}" "${stack_dir}/versions.tf"
 
   local workdir
   workdir="$(mktemp -d)"
-  cp "${stack_dir}/versions.tf" "${stack_dir}/variables.tf" "${workdir}/"
+  TRAP_WORKDIRS+=("${workdir}")
+
+  copy_stack_to_workdir "${stack_dir}" "${workdir}"
   if [[ "${stack_name}" == "release-environment" ]]; then
-    sed -i 's/backend "s3" {}/backend "local" {\n    path = "terraform.tfstate"\n  }/' "${workdir}/versions.tf"
+    prepare_release_workdir_backend "${workdir}"
   fi
-  cat > "${workdir}/main.tf" <<'EOF'
-resource "terraform_data" "plan_leak_probe" {
-  input = "plan-leak"
-}
-EOF
 
   TRAP_PLAN_FILES+=("${plan_file}")
 
   (
     cd "${workdir}"
     tofu init -input=false >/dev/null
-    for kv in "${exports[@]}"; do
+    for kv in "${extra_env[@]}"; do
       export "${kv?}"
     done
-    tofu plan -input=false -out="${plan_file}" >/dev/null
+    tofu plan -input=false \
+      -var-file="${tfvars_file}" \
+      -target='terraform_data.plan_leak_probe[0]' \
+      -out="${plan_file}" >/dev/null
   )
 
-  rm -rf "${workdir}"
-
-  if grep -F "${pass}" "${plan_file}" >/dev/null 2>&1; then
-    echo "FAIL: ${stack_name} plan file contains plaintext encryption passphrase" >&2
+  if plan_file_contains_marker "${plan_file}" "${marker}"; then
+    echo "FAIL: ${stack_name} encrypted plan file contains sensitive marker (plan encryption ineffective)" >&2
     return 1
   fi
 
-  echo "OK: ${stack_name} plan file has no plaintext passphrase (${plan_file})"
+  echo "OK: ${stack_name} encrypted plan hides sensitive marker (${plan_file})"
 }
 
-BOOTSTRAP_PASS='plan-leak-bootstrap-passphrase-xyzzy'
-RELEASE_PASS='plan-leak-release-passphrase-xyzzy'
+# Sanity check: without plan {}, the same marker must appear in the plan file bytes.
+assert_unencrypted_plan_exposes_marker() {
+  local stack_name=$1
+  local stack_dir=$2
+  local marker=$3
+  local tfvars_file=$4
+  shift 4
+  local -a extra_env=("$@")
+
+  local workdir plan_file
+  workdir="$(mktemp -d)"
+  TRAP_WORKDIRS+=("${workdir}")
+  plan_file="${workdir}/unencrypted.tfplan"
+
+  copy_stack_to_workdir "${stack_dir}" "${workdir}"
+  if [[ "${stack_name}" == "release-environment" ]]; then
+    prepare_release_workdir_backend "${workdir}"
+  fi
+
+  python3 - "${workdir}/versions.tf" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+needle = "plan {"
+start = text.find(needle)
+if start < 0:
+    sys.exit("plan block not found")
+depth = 0
+idx = start
+while idx < len(text):
+    ch = text[idx]
+    if ch == "{":
+        depth += 1
+    elif ch == "}":
+        depth -= 1
+        if depth == 0:
+            text = text[:start] + text[idx + 1 :]
+            break
+    idx += 1
+else:
+    sys.exit("unbalanced plan block")
+path.write_text(text)
+PY
+
+  (
+    cd "${workdir}"
+    tofu init -input=false >/dev/null
+    for kv in "${extra_env[@]}"; do
+      export "${kv?}"
+    done
+    tofu plan -input=false \
+      -var-file="${tfvars_file}" \
+      -target='terraform_data.plan_leak_probe[0]' \
+      -out="${plan_file}" >/dev/null
+  )
+
+  if ! plan_file_contains_marker "${plan_file}" "${marker}"; then
+    echo "FAIL: ${stack_name} plan without plan {} block did not expose marker (encryption test is not meaningful)" >&2
+    return 1
+  fi
+
+  echo "OK: ${stack_name} unencrypted plan exposes marker (control case)"
+}
+
 BOOTSTRAP_DIR="${ROOT}/infra/opentofu/state-bootstrap"
 RELEASE_DIR="${ROOT}/infra/opentofu/release-environment"
+BOOTSTRAP_MARKER='PLAN-LEAK-MARKER-STATE-BOOTSTRAP-xyzzy-0123456789'
+RELEASE_MARKER='PLAN-LEAK-MARKER-RELEASE-ENV-xyzzy-0123456789'
+BOOTSTRAP_TFVARS="${BOOTSTRAP_DIR}/plan-leak.ci.tfvars"
+RELEASE_TFVARS="${RELEASE_DIR}/plan-leak.ci.tfvars"
 
-run_mocked_plan_test "state-bootstrap" "${BOOTSTRAP_DIR}" \
-  "TF_VAR_bootstrap_state_encryption_passphrase=${BOOTSTRAP_PASS}" \
-  "TF_VAR_cloudflare_account_id=00000000000000000000000000000001" \
-  "TF_VAR_state_bucket_name=queerglobal-hub-framework-tofu-state" \
+BOOTSTRAP_ENV=(
+  "TF_VAR_bootstrap_state_encryption_passphrase=plan-leak-bootstrap-passphrase-16chars"
+  "TF_VAR_bootstrap_state_encryption_passphrase_legacy=plan-leak-bootstrap-passphrase-16chars"
+  "TF_VAR_cloudflare_account_id=00000000000000000000000000000001"
+  "TF_VAR_state_bucket_name=queerglobal-hub-framework-tofu-state"
   "CLOUDFLARE_API_TOKEN=plan-leak-mock-token"
+)
+RELEASE_ENV=(
+  "TF_VAR_state_encryption_passphrase=plan-leak-release-passphrase-16chars"
+  "TF_VAR_state_encryption_passphrase_legacy=plan-leak-release-passphrase-16chars"
+  "GITHUB_TOKEN=plan-leak-mock-token"
+)
 
-assert_plan_out_no_passphrase "state-bootstrap" "${BOOTSTRAP_DIR}" "${BOOTSTRAP_PASS}" \
-  "${BOOTSTRAP_DIR}/ci-plan-leak.tfplan" \
-  "TF_VAR_bootstrap_state_encryption_passphrase=${BOOTSTRAP_PASS}"
+plan_leak_stack "state-bootstrap" "${BOOTSTRAP_DIR}" "${BOOTSTRAP_MARKER}" \
+  "${BOOTSTRAP_DIR}/ci-plan-leak.tfplan" "${BOOTSTRAP_TFVARS}" "${BOOTSTRAP_ENV[@]}"
 
-run_mocked_plan_test "release-environment" "${RELEASE_DIR}" \
-  "TF_VAR_state_encryption_passphrase=${RELEASE_PASS}"
+plan_leak_stack "release-environment" "${RELEASE_DIR}" "${RELEASE_MARKER}" \
+  "${RELEASE_DIR}/ci-plan-leak.tfplan" "${RELEASE_TFVARS}" "${RELEASE_ENV[@]}"
 
-assert_plan_out_no_passphrase "release-environment" "${RELEASE_DIR}" "${RELEASE_PASS}" \
-  "${RELEASE_DIR}/ci-plan-leak.tfplan" \
-  "TF_VAR_state_encryption_passphrase=${RELEASE_PASS}"
+assert_unencrypted_plan_exposes_marker "state-bootstrap" "${BOOTSTRAP_DIR}" "${BOOTSTRAP_MARKER}" \
+  "${BOOTSTRAP_TFVARS}" "${BOOTSTRAP_ENV[@]}"
+
+assert_unencrypted_plan_exposes_marker "release-environment" "${RELEASE_DIR}" "${RELEASE_MARKER}" \
+  "${RELEASE_TFVARS}" "${RELEASE_ENV[@]}"
 
 echo "OK: plan encryption checks passed for state-bootstrap and release-environment"

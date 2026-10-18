@@ -33,8 +33,8 @@ A repository **admin** runs the repo entry point once (idempotent; confirms befo
 That script:
 
 1. Preflights Doppler, Cloudflare token permissions, account ID, and `GITHUB_TOFU_RELEASE_ENV`.
-2. Applies **state-bootstrap** (R2 bucket `queerglobal-hub-framework-tofu-state`, bucket-scoped S3 credentials), then migrates bootstrap state to R2.
-3. Writes backend settings and credentials to **Doppler** (`hub-framework` / `infra`).
+2. Applies **state-bootstrap** (R2 bucket `queerglobal-hub-framework-tofu-state`, bucket-scoped S3 credentials). **Bootstrap stack state stays local**; an encrypted backup is stored in Doppler config **`bootstrap-admin`**, which CI must never read.
+3. Writes release-environment R2 backend settings and credentials to **Doppler** (`hub-framework` / `infra` only).
 4. Inits/plans/applies **release-environment** using Doppler-backed `backend-config.hcl`.
 
 ### Cloudflare bootstrap token
@@ -53,6 +53,9 @@ After a successful apply, required reviewers (OpenTofu-managed GitHub user IDs) 
 | `reviewer_usernames` | `["mnyon-grandkru"]` | GitHub usernames resolved to numeric user IDs for reviewers |
 | `reviewer_team_slug` | `""` | Optional org team slug to require as reviewer |
 | `release_branch_pattern` | `main` | Branch allowed to use the release environment |
-| `state_encryption_passphrase` | (required) | PBKDF2 passphrase for encrypted remote state (`TOFU_STATE_ENCRYPTION_PASSPHRASE` in Doppler) |
+| `state_encryption_passphrase` | (required) | Primary PBKDF2 passphrase (`state_primary` key provider; `TOFU_STATE_ENCRYPTION_PASSPHRASE` in Doppler `infra`) |
+| `state_encryption_passphrase_legacy` | (required) | Fallback passphrase under original provider name `state` (`TOFU_STATE_ENCRYPTION_PASSPHRASE_LEGACY`) |
+
+State and plan encryption use `enforced = true`. To rotate passphrases, set a new primary in Doppler, keep the previous value in `TOFU_STATE_ENCRYPTION_PASSPHRASE_LEGACY`, then run `tofu apply -refresh-only` in this stack. See `scripts/test/encryption-rotation-test.sh`.
 
 Copy and edit `terraform.tfvars.example` when you need non-default reviewers.

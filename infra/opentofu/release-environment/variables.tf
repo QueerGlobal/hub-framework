@@ -36,6 +36,12 @@ variable "release_branch_pattern" {
 
 variable "state_encryption_passphrase" {
   type        = string
-  description = "Passphrase for encrypting OpenTofu state at rest (min. 16 characters). Set via TF_VAR_state_encryption_passphrase or a secrets manager."
+  description = "Primary passphrase for encrypting release stack state and plans (min. 16 characters)."
+  sensitive   = true
+}
+
+variable "state_encryption_passphrase_legacy" {
+  type        = string
+  description = "Legacy passphrase under key_provider name state (fallback). Set equal to primary until rotation."
   sensitive   = true
 }
