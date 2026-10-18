@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ensures bootstrap backend switching restores tracked versions.tf (clean git tree).
+# Ensures S3 backend switching uses gitignored override files and leaves tracked files clean.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -9,21 +9,31 @@ STACK="${ROOT}/infra/opentofu/state-bootstrap"
 source "${ROOT}/scripts/lib/bootstrap-backend-mode.sh"
 
 cd "${STACK}"
-orig_hash="$(sha256sum versions.tf | awk '{print $1}')"
+orig_versions_hash="$(sha256sum versions.tf | awk '{print $1}')"
+orig_local_hash="$(sha256sum backend_local.tf | awk '{print $1}')"
 
-bootstrap_versions_with_s3_backend "${STACK}"
-bootstrap_versions_restore "${STACK}"
+bootstrap_backend_enable_s3 "${STACK}"
+bootstrap_backend_disable_s3 "${STACK}"
 
-restored_hash="$(sha256sum versions.tf | awk '{print $1}')"
-if [[ "${orig_hash}" != "${restored_hash}" ]]; then
-  echo "FAIL: versions.tf was not restored after S3 backend switch" >&2
+if [[ "$(sha256sum versions.tf | awk '{print $1}')" != "${orig_versions_hash}" ]]; then
+  echo "FAIL: versions.tf changed after backend switch" >&2
   exit 1
 fi
 
-if ! git diff --quiet -- versions.tf; then
-  echo "FAIL: versions.tf differs from git after restore" >&2
-  git diff -- versions.tf >&2 || true
+if [[ "$(sha256sum backend_local.tf | awk '{print $1}')" != "${orig_local_hash}" ]]; then
+  echo "FAIL: backend_local.tf changed after backend switch" >&2
   exit 1
 fi
 
-echo "OK: bootstrap versions.tf restore leaves a clean tree"
+if [[ -f backend_override.tf || -f .bootstrap_backend_local.tf ]]; then
+  echo "FAIL: gitignored backend files left behind after disable" >&2
+  exit 1
+fi
+
+if ! git diff --quiet -- versions.tf backend_local.tf; then
+  echo "FAIL: tracked backend files differ from git after restore" >&2
+  git diff -- versions.tf backend_local.tf >&2 || true
+  exit 1
+fi
+
+echo "OK: backend_override.tf approach leaves a clean tree"

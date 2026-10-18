@@ -1,78 +1,61 @@
 # shellcheck shell=bash
-# Temporary S3 backend for state-bootstrap without leaving a dirty tracked versions.tf.
+# Optional S3 backend via gitignored backend_override.tf (never rewrite tracked versions.tf).
 
-bootstrap_versions_tf_path() {
+bootstrap_backend_local_tf() {
   local dir=${1:?}
-  echo "${dir}/versions.tf"
+  echo "${dir}/backend_local.tf"
 }
 
-bootstrap_versions_snapshot_path() {
+bootstrap_backend_override_tf() {
   local dir=${1:?}
-  echo "${dir}/.bootstrap-versions.tf.snapshot"
+  echo "${dir}/backend_override.tf"
 }
 
-bootstrap_versions_snapshot() {
+bootstrap_backend_local_hidden() {
+  local dir=${1:?}
+  echo "${dir}/.bootstrap_backend_local.tf"
+}
+
+bootstrap_backend_enable_s3() {
   local dir=$1
-  local versions_tf snapshot
-  versions_tf="$(bootstrap_versions_tf_path "${dir}")"
-  snapshot="$(bootstrap_versions_snapshot_path "${dir}")"
-  if [[ ! -f "${snapshot}" ]]; then
-    cp "${versions_tf}" "${snapshot}"
+  local local_tf hidden override
+  local_tf="$(bootstrap_backend_local_tf "${dir}")"
+  hidden="$(bootstrap_backend_local_hidden "${dir}")"
+  override="$(bootstrap_backend_override_tf "${dir}")"
+
+  if [[ -f "${local_tf}" && ! -f "${hidden}" ]]; then
+    mv "${local_tf}" "${hidden}"
   fi
-}
 
-bootstrap_versions_restore() {
-  local dir=$1
-  local versions_tf snapshot
-  versions_tf="$(bootstrap_versions_tf_path "${dir}")"
-  snapshot="$(bootstrap_versions_snapshot_path "${dir}")"
-  if [[ -f "${snapshot}" ]]; then
-    cp "${snapshot}" "${versions_tf}"
-    rm -f "${snapshot}"
-  fi
-}
-
-bootstrap_versions_with_s3_backend() {
-  local dir=$1
-  local versions_tf
-  versions_tf="$(bootstrap_versions_tf_path "${dir}")"
-  bootstrap_versions_snapshot "${dir}"
-  cat > "${versions_tf}" <<'EOF'
+  cat > "${override}" <<'EOF'
 terraform {
-  required_version = ">= 1.10.0"
-
   backend "s3" {}
-
-  encryption {
-    key_provider "pbkdf2" "bootstrap" {
-      passphrase = var.bootstrap_state_encryption_passphrase
-    }
-
-    method "aes_gcm" "bootstrap" {
-      keys = key_provider.pbkdf2.bootstrap
-    }
-
-    state {
-      method = method.aes_gcm.bootstrap
-    }
-
-    plan {
-      method = method.aes_gcm.bootstrap
-    }
-  }
-
-  required_providers {
-    cloudflare = {
-      source  = "cloudflare/cloudflare"
-      version = "~> 4.40"
-    }
-  }
 }
 EOF
 }
 
-bootstrap_backend_is_remote() {
+bootstrap_backend_disable_s3() {
   local dir=$1
-  [[ -f "${dir}/.terraform/terraform.tfstate" ]] \
-    && grep -q '"type"[[:space:]]*:[[:space:]]*"s3"' "${dir}/.terraform/terraform.tfstate"
+  local local_tf hidden override
+  local_tf="$(bootstrap_backend_local_tf "${dir}")"
+  hidden="$(bootstrap_backend_local_hidden "${dir}")"
+  override="$(bootstrap_backend_override_tf "${dir}")"
+
+  rm -f "${override}"
+  if [[ -f "${hidden}" && ! -f "${local_tf}" ]]; then
+    mv "${hidden}" "${local_tf}"
+  fi
+}
+
+bootstrap_backup_local_state_to_doppler() {
+  local state_file=$1
+  local project=$2
+  local config=$3
+  if [[ ! -f "${state_file}" ]]; then
+    echo "No local bootstrap state at ${state_file}; skip backup." >&2
+    return 1
+  fi
+  doppler secrets set TOFU_BOOTSTRAP_STATE_LOCAL_BACKUP \
+    --project "${project}" --config "${config}" \
+    --silent --no-interactive <"${state_file}"
 }
