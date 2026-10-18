@@ -88,16 +88,22 @@ if ! grep -Fq 'preflight: a secret reached the argv of curl' <<<"${msg}"; then
 fi
 echo "OK: argv mutant caught: direct bearer in preflight_cloudflare_bootstrap_api_token"
 
-# Segment 2: passphrase rotation with real OpenTofu.
+# Segment 2: passphrase rotation with real OpenTofu and mock Doppler.
 FIXTURE="${ROOT}/infra/opentofu/encryption-rotation-fixture"
+ROT_DB="${WORKDIR}/rotation-doppler.tsv"
+: >"${ROT_DB}"
+# shellcheck source=scripts/test/lib/rotation-doppler-mock.sh
+source "${ROOT}/scripts/test/lib/rotation-doppler-mock.sh"
+rotation_doppler_mock_install "${SHIM_BIN}" "${ROT_DB}"
+rotation_doppler_seed "${ROT_DB}" TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE hub-framework bootstrap-admin "${PASS_A}"
+export ROTATION_DOPPLER_DB="${ROT_DB}" DOPPLER_PROJECT=hub-framework DOPPLER_CONFIG=bootstrap-admin
 mkdir -p "${WORKDIR}/stack"
 cp "${FIXTURE}/variables.tf" "${FIXTURE}/main.tf" "${FIXTURE}/versions.tf" "${WORKDIR}/stack/"
 export TOFU=tofu
 ( cd "${WORKDIR}/stack" && TF_VAR_passphrase="${PASS_A}" tofu init -input=false >/dev/null \
   && TF_VAR_passphrase="${PASS_A}" tofu apply -input=false -auto-approve >/dev/null )
 : >"${ARGV_LOG}"
-TOFU_ROTATE_OLD_PASSPHRASE="${PASS_A}" TOFU_ROTATE_NEW_PASSPHRASE="${PASS_B}" \
-  "${ROOT}/scripts/tofu-rotate-encryption-passphrase.sh" "${WORKDIR}/stack" bootstrap >/dev/null
+"${ROOT}/scripts/tofu-rotate-encryption-passphrase.sh" "${WORKDIR}/stack" bootstrap >/dev/null
 argv_shim_assert_no_secrets "${ARGV_LOG}" "rotation" "${SECRETS[@]}"
 echo "OK: rotation keeps passphrases off argv"
 

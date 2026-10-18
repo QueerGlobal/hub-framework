@@ -91,6 +91,9 @@ jobs:
       - name: Encryption rotation test
         run: scripts/test/encryption-rotation-test.sh
 
+      - name: Encryption rotation mutation tests
+        run: scripts/test/encryption-rotation-mutations-test.sh
+
       - name: Secrets argv test
         run: scripts/test/secrets-argv-test.sh
 

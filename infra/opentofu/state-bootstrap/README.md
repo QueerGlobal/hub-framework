@@ -46,18 +46,16 @@ Release R2 credentials in `infra` cannot overwrite bootstrap state because boots
 
 Committed config keeps a **single** key provider **`bootstrap`** (no fallback). Rotation is two refresh-only applies via `TF_ENCRYPTION` so tracked `.tf` files stay unchanged; state metadata remains under **`bootstrap`**.
 
-1. Store the next passphrase in Doppler (for example `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT`) and export the current value from `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE`.
-2. From the repo root:
+1. Ensure `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE` is set in Doppler `bootstrap-admin` (the script reads it; do not type passphrases on the command line).
+2. From the repo root, with the Doppler CLI logged in:
 
 ```bash
-TOFU_ROTATE_OLD_PASSPHRASE="${TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE}" \
-TOFU_ROTATE_NEW_PASSPHRASE="${TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT}" \
-  ./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/state-bootstrap bootstrap
+./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/state-bootstrap bootstrap
 ```
 
-3. Update `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE` in `bootstrap-admin` to the new value and remove `_NEXT`.
+The script generates a new passphrase, stores it as `TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_NEXT`, runs the two-hop `TF_ENCRYPTION` rotation, verifies the old passphrase no longer decrypts state, then promotes the new value and deletes `_NEXT`.
 
-Requires **OpenTofu 1.13.1+**. Proof: `scripts/test/encryption-rotation-test.sh`.
+Requires **OpenTofu 1.13.1+**. Proof: `scripts/test/encryption-rotation-test.sh` and `scripts/test/encryption-rotation-mutations-test.sh`.
 
 ## Run
 
