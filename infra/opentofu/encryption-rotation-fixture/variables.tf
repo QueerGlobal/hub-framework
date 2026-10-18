@@ -1,9 +1,4 @@
-variable "passphrase_legacy" {
-  type      = string
-  sensitive = true
-}
-
-variable "passphrase_primary" {
+variable "passphrase" {
   type      = string
   sensitive = true
 }

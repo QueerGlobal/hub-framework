@@ -103,22 +103,16 @@ if ! doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE --plain \
   confirm "Create TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE in Doppler (${DOPPLER_BOOTSTRAP_ADMIN_CONFIG})?"
   doppler_secret_set_stdin TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE "${BOOTSTRAP_PASS}" \
     "${DOPPLER_PROJECT_NAME}" "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}"
-  doppler_secret_set_stdin TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_LEGACY "${BOOTSTRAP_PASS}" \
-    "${DOPPLER_PROJECT_NAME}" "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}"
 fi
 
 export TF_VAR_bootstrap_state_encryption_passphrase
-export TF_VAR_bootstrap_state_encryption_passphrase_legacy
 TF_VAR_bootstrap_state_encryption_passphrase="$(doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE --plain \
   -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}")"
-TF_VAR_bootstrap_state_encryption_passphrase_legacy="$(doppler secrets get TOFU_BOOTSTRAP_STATE_ENCRYPTION_PASSPHRASE_LEGACY --plain \
-  -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_BOOTSTRAP_ADMIN_CONFIG}" 2>/dev/null || echo "${TF_VAR_bootstrap_state_encryption_passphrase}")"
 
 if ! doppler secrets get TOFU_STATE_ENCRYPTION_PASSPHRASE --plain -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" >/dev/null 2>&1; then
   RELEASE_PASS="$(openssl rand -base64 24)"
   confirm "Create TOFU_STATE_ENCRYPTION_PASSPHRASE in Doppler (${DOPPLER_INFRA_CONFIG})?"
   doppler_secret_set_stdin TOFU_STATE_ENCRYPTION_PASSPHRASE "${RELEASE_PASS}"
-  doppler_secret_set_stdin TOFU_STATE_ENCRYPTION_PASSPHRASE_LEGACY "${RELEASE_PASS}"
 fi
 
 echo "==> Bootstrap stack (R2 bucket + release scoped credentials; bootstrap state stays local)"
@@ -139,15 +133,12 @@ if [[ "${BOOTSTRAP_E2E:-}" == "1" ]]; then
   echo "==> Release environment stack (E2E local backend init)"
   cd "${RELEASE_DIR}"
   export TF_VAR_state_encryption_passphrase="${TF_VAR_bootstrap_state_encryption_passphrase}"
-  export TF_VAR_state_encryption_passphrase_legacy="${TF_VAR_bootstrap_state_encryption_passphrase_legacy}"
   export GITHUB_TOKEN="${GITHUB_TOFU_RELEASE_ENV:-e2e-mock-github-token}"
   release_backend_enable_local "${RELEASE_DIR}"
   export TF_VAR_state_encryption_passphrase
-  export TF_VAR_state_encryption_passphrase_legacy
   doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c "
     export GITHUB_TOKEN=\"${GITHUB_TOKEN}\"
     export TF_VAR_state_encryption_passphrase=\"${TF_VAR_state_encryption_passphrase}\"
-    export TF_VAR_state_encryption_passphrase_legacy=\"${TF_VAR_state_encryption_passphrase_legacy}\"
     tofu init -input=false -reconfigure
     tofu validate
   "
@@ -196,10 +187,7 @@ confirm "Run tofu init/plan/apply for release-environment (GitHub environment)?"
 
 cd "${RELEASE_DIR}"
 export TF_VAR_state_encryption_passphrase
-export TF_VAR_state_encryption_passphrase_legacy
 TF_VAR_state_encryption_passphrase="$(doppler secrets get TOFU_STATE_ENCRYPTION_PASSPHRASE --plain -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}")"
-TF_VAR_state_encryption_passphrase_legacy="$(doppler secrets get TOFU_STATE_ENCRYPTION_PASSPHRASE_LEGACY --plain \
-  -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" 2>/dev/null || echo "${TF_VAR_state_encryption_passphrase}")"
 
 export GITHUB_TOKEN
 if [[ -n "${GITHUB_TOFU_RELEASE_ENV:-}" ]]; then
@@ -211,7 +199,6 @@ fi
 doppler run -p "${DOPPLER_PROJECT_NAME}" -c "${DOPPLER_INFRA_CONFIG}" -- bash -c "
   export GITHUB_TOKEN=\"${GITHUB_TOKEN}\"
   export TF_VAR_state_encryption_passphrase=\"${TF_VAR_state_encryption_passphrase}\"
-  export TF_VAR_state_encryption_passphrase_legacy=\"${TF_VAR_state_encryption_passphrase_legacy}\"
   tofu init -input=false -backend-config=backend-config.hcl -reconfigure
   if [[ \"${BOOTSTRAP_E2E:-}\" == \"1\" ]]; then
     tofu validate

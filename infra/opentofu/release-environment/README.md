@@ -53,9 +53,19 @@ After a successful apply, required reviewers (OpenTofu-managed GitHub user IDs) 
 | `reviewer_usernames` | `["mnyon-grandkru"]` | GitHub usernames resolved to numeric user IDs for reviewers |
 | `reviewer_team_slug` | `""` | Optional org team slug to require as reviewer |
 | `release_branch_pattern` | `main` | Branch allowed to use the release environment |
-| `state_encryption_passphrase` | (required) | Primary PBKDF2 passphrase (`state_primary` key provider; `TOFU_STATE_ENCRYPTION_PASSPHRASE` in Doppler `infra`) |
-| `state_encryption_passphrase_legacy` | (required) | Fallback passphrase under original provider name `state` (`TOFU_STATE_ENCRYPTION_PASSPHRASE_LEGACY`) |
+| `state_encryption_passphrase` | (required) | PBKDF2 passphrase for key provider **`state`** (`TOFU_STATE_ENCRYPTION_PASSPHRASE` in Doppler `infra`) |
 
-State and plan encryption use `enforced = true`. To rotate passphrases, set a new primary in Doppler, keep the previous value in `TOFU_STATE_ENCRYPTION_PASSPHRASE_LEGACY`, then run `tofu apply -refresh-only` in this stack. See `scripts/test/encryption-rotation-test.sh`.
+State and plan encryption use key provider **`state`** with `enforced = true`.
+
+## Passphrase rotation
+
+Same two-hop `TF_ENCRYPTION` flow as bootstrap; provider name is **`state`**:
+
+```bash
+./scripts/tofu-rotate-encryption-passphrase.sh infra/opentofu/release-environment state \
+  "${TOFU_STATE_ENCRYPTION_PASSPHRASE}" "${TOFU_STATE_ENCRYPTION_PASSPHRASE_NEXT}"
+```
+
+Then update `TOFU_STATE_ENCRYPTION_PASSPHRASE` in Doppler `infra` and clear `_NEXT`. Requires **OpenTofu 1.13.1+**. See `scripts/test/encryption-rotation-test.sh`.
 
 Copy and edit `terraform.tfvars.example` when you need non-default reviewers.

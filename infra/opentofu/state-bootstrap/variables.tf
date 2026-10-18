@@ -11,13 +11,7 @@ variable "state_bucket_name" {
 
 variable "bootstrap_state_encryption_passphrase" {
   type        = string
-  description = "Primary passphrase encrypting bootstrap state and plans (min. 16 characters)."
-  sensitive   = true
-}
-
-variable "bootstrap_state_encryption_passphrase_legacy" {
-  type        = string
-  description = "Legacy passphrase under key_provider name bootstrap (fallback). Set equal to primary until rotation."
+  description = "Passphrase for key_provider bootstrap (state and plan encryption; min. 16 characters)."
   sensitive   = true
 }
 

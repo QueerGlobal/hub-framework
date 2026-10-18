@@ -7,7 +7,7 @@ terraform {
 
   encryption {
     key_provider "pbkdf2" "bootstrap" {
-      passphrase = var.passphrase_legacy
+      passphrase = var.passphrase
     }
 
     method "aes_gcm" "bootstrap" {

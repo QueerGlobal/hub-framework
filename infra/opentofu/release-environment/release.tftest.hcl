@@ -20,8 +20,7 @@ run "release_environment_apply" {
   }
 
   variables {
-    state_encryption_passphrase        = "mock-release-passphrase-16"
-    state_encryption_passphrase_legacy = "mock-release-passphrase-16"
+    state_encryption_passphrase = "mock-release-passphrase-16"
     github_owner                       = "QueerGlobal"
     github_repository                  = "hub-framework"
     environment_name                   = "release"
